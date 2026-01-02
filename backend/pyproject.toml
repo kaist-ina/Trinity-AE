@@ -1,0 +1,49 @@
+[project]
+name = "trinity-backend"
+version = "0.1.0"
+description = "Trinity backend with TVM Relax and Mirage"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "torch>=2.8.0",
+    "numpy",
+    "z3-solver",
+    "mirage",
+    "tvm",
+    "graphviz>=0.21",
+    "tqdm>=4.67.1",
+]
+
+[tool.uv.workspace]
+members = ["relax", "mirage_eval/src/mirage"]
+
+[tool.uv.sources]
+mirage = { workspace = true }
+tvm = { workspace = true }
+
+[tool.ruff]
+exclude = [
+    "relax/",
+    "mirage_eval/src/mirage/",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle Error
+    "W",   # pycodestyle Warning
+    "F",   # pyflakes
+    "S",   # flake8 bandit
+    "LOG", # flake8 logging
+    "G",   # flake8 logging format
+    "Q",   # flake8 quotes
+    "A",   # flake8 builtins
+    "B",   # flake8 bugbear
+    "C4",  # flake8 comprehensions
+    "PLE", # pylint
+    "PLW", # pylint
+    "I",   # isort
+    "RUF", # ruff specific
+]
+
+[tool.ruff.format]
+quote-style = "double"
