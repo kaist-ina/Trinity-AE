@@ -453,7 +453,7 @@ def main():
                 ex = relax.build(relax_mod, target=tvm_target)
             vm = relax.VirtualMachine(ex, tvm_dev)
 
-            relax_mod.show()
+            # relax_mod.show()
 
             # Convert torch tensors to TVM NDArray (use tvm.runtime.tensor for proper shape info)
             tvm_inputs = [tvm.runtime.tensor(t.cpu().numpy().astype("float16"), device=tvm_dev) for t in relax_inputs]
