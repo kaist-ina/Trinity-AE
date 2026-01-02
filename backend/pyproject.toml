@@ -8,8 +8,6 @@ dependencies = [
     "torch>=2.8.0",
     "numpy",
     "z3-solver",
-    "mirage",
-    "tvm",
     "graphviz>=0.21",
     "tqdm>=4.67.1",
     "flashinfer-python",
@@ -17,12 +15,12 @@ dependencies = [
     "onnxscript",
 ]
 
-[tool.uv.workspace]
-members = ["relax", "mirage_eval/src/mirage"]
+[project.scripts]
+setup-tvm = "setup_tvm:main"
+install-all = "install_all:main"
 
-[tool.uv.sources]
-mirage = { workspace = true }
-tvm = { workspace = true }
+# Note: tvm and mirage are built separately via install_all.py
+# They require custom CMAKE options and are not managed by uv workspace
 
 [tool.ruff]
 exclude = [

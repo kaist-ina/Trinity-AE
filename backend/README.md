@@ -29,15 +29,55 @@ backend/
 
 ## Requirements
 
-```bash
-pip install -r requirements.txt
-```
-
-Key dependencies:
-- Python 3.8+
+- Python 3.12+
 - PyTorch 2.8+
 - Triton 3.4+
-- CUDA 12.x
+- CUDA 12.x+
+- [uv](https://docs.astral.sh/uv/) (Python package manager)
+
+## Installation
+
+### First-time Setup
+
+Run the install script to build TVM Relax (with CUDA/cuBLAS support) and Mirage:
+
+```bash
+python install_all.py
+```
+
+This will:
+1. Initialize git submodules for TVM
+2. Build TVM Relax with CUDA, cuBLAS, and CUTLASS support
+3. Build Mirage
+4. Sync all Python dependencies
+5. Set up TVM environment (install `.pth` file)
+
+### After Initial Setup
+
+For subsequent dependency updates, simply run:
+
+```bash
+uv sync
+```
+
+### Verify Installation
+
+```bash
+python -c "import tvm; print(tvm.__file__)"
+python -c "import mirage; print(mirage.__file__)"
+```
+
+### Troubleshooting
+
+If TVM import fails after reactivating the virtual environment:
+
+```bash
+# Re-install the .pth file
+uv run setup-tvm
+
+# Or rebuild everything
+python install_all.py
+```
 
 ## Usage
 
