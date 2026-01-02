@@ -1303,12 +1303,13 @@ class TensorRT_FFN(nn.Module):
                 
                 return FF2
         
-        onnx_file = tempfile.NamedTemporaryFile(suffix='.onnx', delete=False)
-        onnx_path = onnx_file.name
-        onnx_file.close()
+        # Use temp directory to handle external ONNX data files for large weights
+        onnx_dir = tempfile.mkdtemp()
+        onnx_path = os.path.join(onnx_dir, 'model.onnx')
 
         device = self.device
         dtype = self.dtype
+        cwd = os.getcwd()
 
         try:
             model = TensorOpsModel(self.N, self.WO, self.WFF1a, self.WFF1b, self.WFF2)
@@ -1333,28 +1334,32 @@ class TensorRT_FFN(nn.Module):
             )
             parser = trt.OnnxParser(network, logger)
 
+            # Change to ONNX directory so TensorRT can find external data files
+            os.chdir(onnx_dir)
             with open(onnx_path, 'rb') as f:
                 if not parser.parse(f.read()):
                     raise RuntimeError('Failed to parse ONNX file')
-            
+
             config = builder.create_builder_config()
             config.set_flag(trt.BuilderFlag.FP16)
             config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 1 << 30)
 
             serialized_engine = builder.build_serialized_network(network, config)
-            if serialized_engine is None: 
+            if serialized_engine is None:
                 raise RuntimeError("Failed to build TensorRT engine")
 
             runtime = trt.Runtime(logger)
             self.engine = runtime.deserialize_cuda_engine(serialized_engine)
             if self.engine is None:
                 raise RuntimeError("Failed to deserialize TensorrRT engine")
-            
+
             self.context = self.engine.create_execution_context()
-        
+
         finally:
-            if os.path.exists(onnx_path):
-                os.remove(onnx_path)
+            os.chdir(cwd)
+            import shutil
+            if os.path.exists(onnx_dir):
+                shutil.rmtree(onnx_dir)
     
     def forward(self, O2, X):
         bindings = [

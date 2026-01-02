@@ -243,8 +243,9 @@ def main():
             ti = FFN(M, N, N4, WO=WO, WFF1a=WFF1a, WFF1b=WFF1b, WFF2=WFF2, device=device, dtype=dtype)
             fi = None
             ft = None
-            relax_mod = None
-            relax_inputs = None
+            from relax_benchmark.ffn import create_relax_ffn, prepare_inputs_ffn
+            relax_mod = create_relax_ffn(M, N, N4)
+            relax_inputs = prepare_inputs_ffn(X, O2, WO, WFF1a, WFF1b, WFF2)
 
     # --------------- Trinity ---------------------
     print("="*50)
