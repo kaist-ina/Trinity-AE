@@ -1,5 +1,8 @@
 from codegen.convert_module import convert_ir_to_triton
-import argparse, torch, importlib.util, sys, json
+import argparse, torch, importlib.util, sys, json, time
+
+import tvm
+from tvm import relax
 
 def main():
     parser = argparse.ArgumentParser()
@@ -169,6 +172,7 @@ def main():
     inductor_time = None
     flashinfer_time = None
     flashtensor_time = None
+    relax_time = None
 
     if option == 0:
         with open(case_file, "r") as f:
@@ -190,6 +194,9 @@ def main():
             fi = FlashInfer_Vanilla(M, N, D, P, K_cache_flashinfer.clone(), V_cache_flashinfer.clone(), WQ, WK, WV, device, dtype)
             from flashtensor.h100_vanilla import bench_vanilla
             ft = bench_vanilla
+            from relax_benchmark.vanilla import create_relax_vanilla, prepare_inputs_vanilla
+            relax_mod = create_relax_vanilla(M, N, H, D, P)
+            relax_inputs = prepare_inputs_vanilla(X, WQ, WK, WV, K_cache.clone(), V_cache.clone())
         case "prenorm":
             from baselines import PreNorm, TensorRT_PreNorm, FlashInfer_PreNorm
             trt = TensorRT_PreNorm(M, N, D, H, K_cache.clone(), V_cache.clone(), P, WQ, WK, WV, device, dtype)
@@ -197,6 +204,9 @@ def main():
             fi = FlashInfer_PreNorm(M, N, D, P, K_cache_flashinfer.clone(), V_cache_flashinfer.clone(), WQ, WK, WV, device, dtype)
             from flashtensor.h100_prenorm import bench_prenorm
             ft = bench_prenorm
+            from relax_benchmark.prenorm import create_relax_prenorm, prepare_inputs_prenorm
+            relax_mod = create_relax_prenorm(M, N, H, D, P)
+            relax_inputs = prepare_inputs_prenorm(X, WQ, WK, WV, K_cache.clone(), V_cache.clone())
         case "keyformer":
             from baselines import KeyFormer, TensorRT_KeyFormer
             trt = TensorRT_KeyFormer(M, N, D, H, K_cache.clone(), V_cache.clone(), P, noise, WQ, WK, WV, device, dtype)
@@ -204,6 +214,9 @@ def main():
             fi = None
             from flashtensor.h100_kf import bench_kf
             ft = bench_kf
+            from relax_benchmark.keyformer import create_relax_keyformer, prepare_inputs_keyformer
+            relax_mod = create_relax_keyformer(M, N, H, D, P)
+            relax_inputs = prepare_inputs_keyformer(X, WQ, WK, WV, noise, K_cache.clone(), V_cache.clone())
         case "qknorm":
             from baselines import QKNorm, TensorRT_QKNorm, FlashInfer_QKNorm
             trt = TensorRT_QKNorm(M, N, D, H, K_cache.clone(), V_cache.clone(), P, WQ, WK, WV, device, dtype)
@@ -211,6 +224,9 @@ def main():
             fi = FlashInfer_QKNorm(M, N, D, P, K_cache_flashinfer.clone(), V_cache_flashinfer.clone(), WQ, WK, WV, device, dtype)
             from flashtensor.h100_qknorm import bench_qknorm
             ft = bench_qknorm
+            from relax_benchmark.qknorm import create_relax_qknorm, prepare_inputs_qknorm
+            relax_mod = create_relax_qknorm(M, N, H, D, P)
+            relax_inputs = prepare_inputs_qknorm(X, WQ, WK, WV, K_cache.clone(), V_cache.clone())
         case "roco":
             from baselines import RoCo, TensorRT_RoCo, FlashInfer_RoCo
             trt = TensorRT_RoCo(M, N, D, H, K_cache.clone(), V_cache.clone(), P, WQ, WK, WV, device, dtype)
@@ -218,12 +234,17 @@ def main():
             fi = None
             from flashtensor.h100_roco import bench_roco
             ft = bench_roco
+            from relax_benchmark.roco import create_relax_roco, prepare_inputs_roco
+            relax_mod = create_relax_roco(M, N, H, D, P)
+            relax_inputs = prepare_inputs_roco(X, WQ, WK, WV, K_cache.clone(), V_cache.clone())
         case "ffn":
             from baselines import FFN, TensorRT_FFN
             trt = TensorRT_FFN(M, N, N4, WO=WO, WFF1a=WFF1a, WFF1b=WFF1b, WFF2=WFF2, device=device, dtype=dtype)
             ti = FFN(M, N, N4, WO=WO, WFF1a=WFF1a, WFF1b=WFF1b, WFF2=WFF2, device=device, dtype=dtype)
             fi = None
             ft = None
+            relax_mod = None
+            relax_inputs = None
 
     # --------------- Trinity ---------------------
     print("="*50)
@@ -415,6 +436,48 @@ def main():
 
         flashtensor_time = ft(model, M, N, P, D, H, device, dtype)
 
+    # ----------------- TVM Relax ---------------------
+    if len(baseline) == 0 or "relax" in baseline:
+        print("="*50)
+        print(f"Starting TVM Relax {target}...")
+
+        if relax_mod is not None:
+            from relax_benchmark.pipeline import opt_gpu
+
+            # Build with CUDA target and optimization pipeline
+            tvm_dev = tvm.device("cuda", 0)
+            tvm_target = tvm.target.Target.from_device(tvm_dev)
+            with tvm_target:
+                relax_mod = opt_gpu(relax_mod)
+                ex = relax.build(relax_mod, target=tvm_target)
+            vm = relax.VirtualMachine(ex, tvm_dev)
+
+            relax_mod.show()
+
+            # Convert torch tensors to TVM NDArray (use tvm.runtime.tensor for proper shape info)
+            tvm_inputs = [tvm.runtime.tensor(t.cpu().numpy().astype("float16"), device=tvm_dev) for t in relax_inputs]
+
+            # Warmup
+            for _ in range(100):
+                _ = vm["forward"](*tvm_inputs)
+            tvm_dev.sync()
+
+            # Benchmark using time.perf_counter() with TVM device sync
+            tvm_dev.sync()
+            start = time.perf_counter()
+            for _ in range(ITER):
+                _ = vm["forward"](*tvm_inputs)
+            tvm_dev.sync()
+            end = time.perf_counter()
+
+            relax_time = (end - start) * 1000 / ITER
+
+            if print_output:
+                out_relax = vm["forward"](*tvm_inputs)
+                print(out_relax)
+        else:
+            print(f"TVM Relax {target}: Not implemented")
+
     # ----------------- Results Summary ---------------------
     results = []
     if trinity_time is not None:
@@ -429,6 +492,8 @@ def main():
         results.append(("FlashInfer", flashinfer_time))
     if flashtensor_time is not None:
         results.append(("FlashTensor", flashtensor_time))
+    if relax_time is not None:
+        results.append(("TVM Relax", relax_time))
 
     if results:
         print("\n" + "="*50)

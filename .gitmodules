@@ -1,0 +1,3 @@
+[submodule "backend/relax"]
+	path = backend/relax
+	url = https://github.com/apache/tvm.git

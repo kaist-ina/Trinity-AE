@@ -501,7 +501,7 @@ class TensorRT_Vanilla(nn.Module):
                 onnx_path,
                 input_names=['X', 'cache_K', 'cache_V'],
                 output_names=['output'],
-                opset_version=13,
+                opset_version=18,
                 do_constant_folding=True
             )
             
@@ -514,9 +514,8 @@ class TensorRT_Vanilla(nn.Module):
             parser = trt.OnnxParser(network, logger)
             
             # Parse ONNX
-            with open(onnx_path, 'rb') as f:
-                if not parser.parse(f.read()):
-                    raise RuntimeError('Failed to parse ONNX file')
+            if not parser.parse_from_file(onnx_path):
+                raise RuntimeError('Failed to parse ONNX file')
             
             # Configure builder
             config = builder.create_builder_config()
@@ -663,7 +662,7 @@ class TensorRT_PreNorm(nn.Module):
                 onnx_path,
                 input_names=['X', 'cache_K', 'cache_V'],
                 output_names=['output'],
-                opset_version=13,
+                opset_version=18,
                 do_constant_folding=True
             )
             
@@ -676,9 +675,8 @@ class TensorRT_PreNorm(nn.Module):
             parser = trt.OnnxParser(network, logger)
             
             # Parse ONNX
-            with open(onnx_path, 'rb') as f:
-                if not parser.parse(f.read()):
-                    raise RuntimeError('Failed to parse ONNX file')
+            if not parser.parse_from_file(onnx_path):
+                raise RuntimeError('Failed to parse ONNX file')
             
             # Configure builder
             config = builder.create_builder_config()
@@ -843,7 +841,7 @@ class TensorRT_KeyFormer(nn.Module):
                 onnx_path,
                 input_names=['X', 'cache_K', 'cache_V'],
                 output_names=['output', 'perturb_out'],
-                opset_version=13,
+                opset_version=18,
                 do_constant_folding=True
             )
             
@@ -856,9 +854,8 @@ class TensorRT_KeyFormer(nn.Module):
             parser = trt.OnnxParser(network, logger)
             
             # Parse ONNX
-            with open(onnx_path, 'rb') as f:
-                if not parser.parse(f.read()):
-                    raise RuntimeError('Failed to parse ONNX file')
+            if not parser.parse_from_file(onnx_path):
+                raise RuntimeError('Failed to parse ONNX file')
             
             # Configure builder
             config = builder.create_builder_config()
@@ -1024,7 +1021,7 @@ class TensorRT_QKNorm(nn.Module):
                 onnx_path,
                 input_names=['X', 'cache_K', 'cache_V'],
                 output_names=['output'],
-                opset_version=13,
+                opset_version=18,
                 do_constant_folding=True
             )
             
@@ -1037,9 +1034,8 @@ class TensorRT_QKNorm(nn.Module):
             parser = trt.OnnxParser(network, logger)
             
             # Parse ONNX
-            with open(onnx_path, 'rb') as f:
-                if not parser.parse(f.read()):
-                    raise RuntimeError('Failed to parse ONNX file')
+            if not parser.parse_from_file(onnx_path):
+                raise RuntimeError('Failed to parse ONNX file')
             
             # Configure builder
             config = builder.create_builder_config()
@@ -1206,7 +1202,7 @@ class TensorRT_RoCo(nn.Module):
                 onnx_path,
                 input_names=['X', 'cache_K', 'cache_V'],
                 output_names=['output', 'weights_sum', 'weights_sqr_sum'],
-                opset_version=13,
+                opset_version=18,
                 do_constant_folding=True
             )
             
@@ -1219,9 +1215,8 @@ class TensorRT_RoCo(nn.Module):
             parser = trt.OnnxParser(network, logger)
             
             # Parse ONNX
-            with open(onnx_path, 'rb') as f:
-                if not parser.parse(f.read()):
-                    raise RuntimeError('Failed to parse ONNX file')
+            if not parser.parse_from_file(onnx_path):
+                raise RuntimeError('Failed to parse ONNX file')
             
             # Configure builder
             config = builder.create_builder_config()
@@ -1327,7 +1322,7 @@ class TensorRT_FFN(nn.Module):
                 onnx_path,
                 input_names=['O2','X'],
                 output_names=['FF2'],
-                opset_version=13,
+                opset_version=18,
                 do_constant_folding=True,
             )
 

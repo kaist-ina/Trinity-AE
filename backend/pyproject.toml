@@ -12,6 +12,9 @@ dependencies = [
     "tvm",
     "graphviz>=0.21",
     "tqdm>=4.67.1",
+    "flashinfer-python",
+    "tensorrt-cu13",
+    "onnxscript",
 ]
 
 [tool.uv.workspace]
