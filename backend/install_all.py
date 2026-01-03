@@ -5,6 +5,34 @@ import sys
 import site
 
 
+def get_cuda_architectures():
+    """Detect GPU compute capabilities and return CMAKE_CUDA_ARCHITECTURES string."""
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        caps = set()
+        for line in result.stdout.strip().split("\n"):
+            if line.strip():
+                # Convert "9.0" -> "90", "12.0" -> "120"
+                major, minor = line.strip().split(".")
+                caps.add(f"{major}{minor}")
+
+        if caps:
+            arch_str = ";".join(sorted(caps))
+            print(f"Detected GPU architectures: {arch_str}")
+            return arch_str
+    except (subprocess.CalledProcessError, FileNotFoundError, ValueError) as e:
+        print(f"Warning: Could not detect GPU architecture: {e}")
+
+    # Fallback to native (let CMake detect at build time)
+    print("Using native GPU architecture detection")
+    return "native"
+
+
 def main():
     backend_dir = os.path.dirname(os.path.abspath(__file__))
     relax_dir = os.path.join(backend_dir, "relax")
@@ -30,12 +58,21 @@ def main():
         check=True,
     )
 
+    # Detect GPU architectures
+    cuda_archs = get_cuda_architectures()
+
     # Build environment for TVM Relax
     env = os.environ.copy()
-    env["CMAKE_ARGS"] = "-DUSE_CUDA=ON -DUSE_CUBLAS=ON -DUSE_CUTLASS=ON"
-    env["CMAKE_CUDA_ARCHITECTURE"] = "120"
-    env["CUDA_HOME"] = "/usr/local/cuda"
-    env["PATH"] = env["CUDA_HOME"] + "/bin:" + env.get("PATH", "")
+    cuda_home = "/usr/local/cuda"
+    env["CMAKE_ARGS"] = (
+        "-DUSE_CUDA=ON -DUSE_CUBLAS=ON -DUSE_CUTLASS=ON "
+        f"-DCUDAToolkit_ROOT={cuda_home} "
+        f"-DCMAKE_CUDA_COMPILER={cuda_home}/bin/nvcc "
+        f"-DCMAKE_CUDA_ARCHITECTURES={cuda_archs}"
+    )
+    env["CUDA_HOME"] = cuda_home
+    env["CUDAToolkit_ROOT"] = cuda_home
+    env["PATH"] = cuda_home + "/bin:" + env.get("PATH", "")
 
     # 2. Build TVM Relax
     print("=" * 50)
