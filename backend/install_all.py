@@ -100,7 +100,23 @@ def main():
     print("Setting up TVM environment...")
     print("=" * 50)
     pth_src = os.path.join(backend_dir, "_tvm_setup.pth")
-    site_packages = site.getsitepackages()[0]
+    # Use the virtual environment's site-packages
+    venv_dir = os.path.join(backend_dir, ".venv")
+    site_packages = None
+    for lib_dir in ["lib", "lib64"]:
+        lib_path = os.path.join(venv_dir, lib_dir)
+        if os.path.isdir(lib_path):
+            for entry in os.listdir(lib_path):
+                if entry.startswith("python"):
+                    candidate = os.path.join(lib_path, entry, "site-packages")
+                    if os.path.isdir(candidate):
+                        site_packages = candidate
+                        break
+        if site_packages:
+            break
+    if not site_packages:
+        # Fallback to system site-packages
+        site_packages = site.getsitepackages()[0]
     pth_dst = os.path.join(site_packages, "_tvm_setup.pth")
 
     if os.path.exists(pth_dst) or os.path.islink(pth_dst):
@@ -108,27 +124,26 @@ def main():
     os.symlink(pth_src, pth_dst)
     print(f"Installed: {pth_dst}")
 
-    # 5. Verify
+    # 5. Verify using the virtual environment's Python
     print("=" * 50)
     print("Verifying installation...")
     print("=" * 50)
 
-    tvm_python = os.path.join(relax_dir, "python")
-    if tvm_python not in sys.path:
-        sys.path.insert(0, tvm_python)
-
-    try:
-        import tvm
-        print(f"TVM: {tvm.__file__}")
-    except ImportError as e:
-        print(f"TVM import failed: {e}")
-        return 1
-
-    try:
-        import mirage
-        print(f"Mirage: {mirage.__file__}")
-    except ImportError as e:
-        print(f"Mirage import failed: {e}")
+    venv_python = os.path.join(venv_dir, "bin", "python")
+    verify_script = """
+import tvm
+print(f"TVM: {tvm.__file__}")
+import mirage
+print(f"Mirage: {mirage.__file__}")
+"""
+    result = subprocess.run(
+        [venv_python, "-c", verify_script],
+        capture_output=True,
+        text=True,
+    )
+    print(result.stdout)
+    if result.returncode != 0:
+        print(f"Verification failed: {result.stderr}")
         return 1
 
     print("=" * 50)
