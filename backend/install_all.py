@@ -3,7 +3,7 @@ import os
 import subprocess
 import sys
 import site
-
+import re
 
 def get_cuda_architectures():
     """Detect GPU compute capabilities and return CMAKE_CUDA_ARCHITECTURES string."""
@@ -32,19 +32,69 @@ def get_cuda_architectures():
     print("Using native GPU architecture detection")
     return "native"
 
+def _detect_cuda_major() -> int | None:
+    try:
+        out = subprocess.run(
+            ["/usr/local/cuda/bin/nvcc", "--version"],
+            capture_output=True, text=True, check=True
+        ).stdout
+        m = re.search(r"release\s+(\d+)\.(\d+)", out)
+        if m:
+            return int(m.group(1))
+    except Exception:
+        pass
+
+    try:
+        out = subprocess.run(
+            ["nvidia-smi"],
+            capture_output=True, text=True, check=True
+        ).stdout
+        m = re.search(r"CUDA Version:\s*([0-9]+)\.([0-9]+)", out)
+        if m:
+            return int(m.group(1))
+    except Exception:
+        pass
+
+    return None
+
+
+def choose_trt_extra() -> str | None:
+    override = os.environ.get("TRINITY_TRT_EXTRA", "").strip()
+    if override:
+        return None if override.lower() == "none" else override
+
+    major = _detect_cuda_major()
+    if major == 12:
+        return "trt-cu12"
+    if major == 13:
+        return "trt-cu13"
+    return None
 
 def main():
     backend_dir = os.path.dirname(os.path.abspath(__file__))
     relax_dir = os.path.join(backend_dir, "relax")
     mirage_dir = os.path.join(backend_dir, "mirage_eval", "src", "mirage")
+    venv_dir = os.path.join(backend_dir, ".venv")
+    
+    common_env = os.environ.copy()
+    common_env["UV_PROJECT_ENVIRONMENT"] = venv_dir
+    
+    trt_extra = choose_trt_extra()
 
     # 0. Sync main package dependencies first (before building TVM/Mirage)
     print("=" * 50)
     print("Syncing main package dependencies...")
     print("=" * 50)
+    
+    sync_cmd = ["uv", "sync"]
+    if trt_extra:
+        print(f"Enabling optional dependency: {trt_extra}")
+        sync_cmd += ["--extra", trt_extra]
+        
     subprocess.run(
-        ["uv", "sync"],
+        sync_cmd,
         cwd=backend_dir,
+        env=common_env,
         check=True,
     )
 

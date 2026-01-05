@@ -11,8 +11,23 @@ dependencies = [
     "graphviz>=0.21",
     "tqdm>=4.67.1",
     "flashinfer-python",
-    "tensorrt-cu13",
     "onnxscript",
+]
+
+[project.optional-dependencies]
+trt-cu12 = [
+  "tensorrt-cu12; sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
+trt-cu13 = [
+  "tensorrt-cu13; sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
+
+[tool.uv]
+conflicts = [
+  [
+    { extra = "trt-cu12" },
+    { extra = "trt-cu13" },
+  ],
 ]
 
 [project.scripts]
