@@ -1909,6 +1909,8 @@ def _convert_to_ast(
     # -----------------------------------------------------------
     # Statement Visitor: Returns ASTNode instances (Stmt)
     # -----------------------------------------------------------
+    shape_op_producers: dict[str, T.ASTNode] = {}
+
     def visit_stmt(stmt):
         def _index_key(idx: T.ASTNode) -> tuple:
             if isinstance(idx, T.Tile):
@@ -1987,7 +1989,21 @@ def _convert_to_ast(
                             else:
                                 new_indices.append(idx)
                         value: T.ASTNode = T.Load(node.tensor, T.Index(new_indices))
-                        for axis in sorted(const_axes + fulltile_axes, reverse=True):
+                        producer = shape_op_producers.get(node.tensor.name)
+                        protected_axes: set[int] = set()
+                        if isinstance(producer, T.Unsqueeze):
+                            protected_axes.add(producer.axis)
+
+                        squeeze_axes = [
+                            axis
+                            for axis in (const_axes + fulltile_axes)
+                            if axis not in protected_axes
+                        ]
+
+                        # If this load comes from a same-axis unsqueeze producer,
+                        # keep that explicit axis and avoid rebuilding
+                        # squeeze(unsqueeze(..., axis), axis).
+                        for axis in sorted(squeeze_axes, reverse=True):
                             value = T.Squeeze(value, axis)
                         for axis in sorted(const_axes + fulltile_axes):
                             value = T.Broadcast(value, axis)
@@ -2126,6 +2142,8 @@ def _convert_to_ast(
             value_node = visit_expr(stmt.value)
             out_shape = getattr(stmt.buffer, "shape", None)
             value_node = _insert_broadcasts(value_node, idx_nodes, out_shape)
+            safe_name = stmt.buffer.name.replace(".", "_")
+            shape_op_producers[safe_name] = value_node
             return T.Store(visit_expr(stmt.buffer), value_node, T.Index(idx_nodes))
             
         elif isinstance(stmt, tir.SeqStmt):

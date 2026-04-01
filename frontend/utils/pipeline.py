@@ -75,8 +75,10 @@ def export_model_ir(
     main_func_ir = filter_identity_and_apply_alias(main_func_ir)
     if inline_shape_op:
         main_func_ir = inline_shape_op_calls(main_func_ir)
+        main_func_ir = simplify_redundant_shape_ops(main_func_ir)
     if inline_elementwise_op:
         main_func_ir = inline_elementwise_op_calls(main_func_ir)
+        main_func_ir = simplify_redundant_shape_ops(main_func_ir)
     main_func_ir = eliminate_dead_seq_stores(main_func_ir)
     main_func_ir = eliminate_dead_calls(main_func_ir)
 
