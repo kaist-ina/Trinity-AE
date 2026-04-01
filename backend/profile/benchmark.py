@@ -355,6 +355,61 @@ class IRBenchmark:
             selected.append(best_idx)
         return selected
 
+    def _select_local_refinement_indices(
+        self,
+        unique_infos: List[ExpressionInfo],
+        selected_indices: List[int],
+        benchmarked_results: List[BenchmarkResult],
+        refinement_budget: int,
+        top_k: int,
+    ) -> List[Tuple[int, int, float]]:
+        if refinement_budget <= 0 or not selected_indices or not benchmarked_results:
+            return []
+
+        ranked_positions = [
+            pos
+            for pos, result in sorted(
+                enumerate(benchmarked_results),
+                key=lambda item: (item[1].error is not None, item[1].execution_time),
+            )
+            if result.execution_time != float("inf")
+        ]
+        if not ranked_positions:
+            return []
+
+        anchor_positions = ranked_positions[: max(1, top_k)]
+        remaining = [idx for idx in range(len(unique_infos)) if idx not in selected_indices]
+        if not remaining:
+            return []
+
+        candidate_entries: List[Tuple[float, float, int, int]] = []
+        for idx in remaining:
+            best_anchor_pos = None
+            best_distance = float("inf")
+            for anchor_pos in anchor_positions:
+                anchor_idx = selected_indices[anchor_pos]
+                distance = float(
+                    np.linalg.norm(unique_infos[idx].features - unique_infos[anchor_idx].features)
+                )
+                if distance < best_distance:
+                    best_distance = distance
+                    best_anchor_pos = anchor_pos
+
+            if best_anchor_pos is None:
+                continue
+
+            anchor_result = benchmarked_results[best_anchor_pos]
+            candidate_entries.append(
+                (best_distance, anchor_result.execution_time, idx, best_anchor_pos)
+            )
+
+        candidate_entries.sort(key=lambda item: (item[0], item[1], item[2]))
+        chosen = candidate_entries[:refinement_budget]
+        return [
+            (idx, selected_indices[anchor_pos], distance)
+            for distance, _, idx, anchor_pos in chosen
+        ]
+
     def _nearest_benchmarked_result(
         self,
         candidate: ExpressionInfo,
@@ -381,6 +436,8 @@ class IRBenchmark:
         expressions: List[Tuple[int, str]],
         max_benchmarks: int,
         seed_samples: int,
+        local_refine_budget: int = 0,
+        local_refine_top_k: int = 1,
     ) -> List[BenchmarkResult]:
         infos = self.build_expression_infos(expressions)
         if not infos:
@@ -391,9 +448,12 @@ class IRBenchmark:
             signature_groups.setdefault(info.signature, []).append(info)
 
         unique_infos = [group[0] for group in signature_groups.values()]
-        selected_unique_indices = set(
-            self._select_optimized_expression_indices(unique_infos, max_benchmarks, seed_samples)
+        selected_unique_indices = self._select_optimized_expression_indices(
+            unique_infos,
+            max_benchmarks,
+            seed_samples,
         )
+        selected_unique_index_set = set(selected_unique_indices)
 
         print(
             "Optimized benchmarking:"
@@ -407,7 +467,7 @@ class IRBenchmark:
 
         with tqdm(total=len(selected_unique_indices), desc="Benchmarking reps", unit="IR") as pbar:
             for unique_idx, info in enumerate(unique_infos):
-                if unique_idx not in selected_unique_indices:
+                if unique_idx not in selected_unique_index_set:
                     continue
                 reason = "seed" if len(benchmarked_infos) < min(seed_samples, len(selected_unique_indices)) else "diverse"
                 result = self.run_single_benchmark(info.ir_id, info.ir_expression)
@@ -417,6 +477,34 @@ class IRBenchmark:
                 benchmarked_results.append(result)
                 pbar.update(1)
                 pbar.set_postfix(valid=sum(1 for r in benchmarked_results if r.error is None))
+
+        refinement_choices = self._select_local_refinement_indices(
+            unique_infos,
+            selected_unique_indices,
+            benchmarked_results,
+            refinement_budget=local_refine_budget,
+            top_k=local_refine_top_k,
+        )
+
+        if refinement_choices:
+            print(
+                "Local refinement:"
+                f" benchmarking {len(refinement_choices)} neighbors around"
+                f" top-{max(1, local_refine_top_k)} representatives"
+            )
+            with tqdm(total=len(refinement_choices), desc="Refining local", unit="IR") as pbar:
+                for refine_idx, anchor_idx, distance in refinement_choices:
+                    info = unique_infos[refine_idx]
+                    anchor_info = unique_infos[anchor_idx]
+                    result = self.run_single_benchmark(info.ir_id, info.ir_expression)
+                    result.selection_reason = (
+                        f"local_refine_from={anchor_info.ir_id},distance={distance:.4f}"
+                    )
+                    representative_results[info.signature] = result
+                    benchmarked_infos.append(info)
+                    benchmarked_results.append(result)
+                    pbar.update(1)
+                    pbar.set_postfix(valid=sum(1 for r in benchmarked_results if r.error is None))
 
         results: List[BenchmarkResult] = []
         for info in infos:
@@ -642,6 +730,8 @@ class IRBenchmark:
         optimized: bool = False,
         max_benchmarks: int = 64,
         seed_samples: int = 16,
+        local_refine_budget: int = 0,
+        local_refine_top_k: int = 1,
     ) -> List[BenchmarkResult]:
         """Run benchmarks for all IR expressions in the file."""
         # Parse IR expressions
@@ -664,6 +754,8 @@ class IRBenchmark:
                 expressions,
                 max_benchmarks=max_benchmarks,
                 seed_samples=seed_samples,
+                local_refine_budget=local_refine_budget,
+                local_refine_top_k=local_refine_top_k,
             )
         
         results = []
@@ -772,6 +864,8 @@ def run_comprehensive_benchmark(
     optimized=False,
     max_benchmarks=64,
     seed_samples=16,
+    local_refine_budget=0,
+    local_refine_top_k=1,
     warmup_runs=10,
     benchmark_runs=100,
 ):
@@ -807,6 +901,8 @@ def run_comprehensive_benchmark(
             optimized=optimized,
             max_benchmarks=max_benchmarks,
             seed_samples=seed_samples,
+            local_refine_budget=local_refine_budget,
+            local_refine_top_k=local_refine_top_k,
         )
         
         # Store results with configuration info
@@ -922,6 +1018,8 @@ def main():
     parser.add_argument('--optimized', action='store_true', help="Benchmark only representative IRs and predict nearby candidates")
     parser.add_argument('--max-benchmarks', type=int, default=64, help="Maximum number of representative IRs to benchmark")
     parser.add_argument('--seed-samples', type=int, default=16, help="Number of diverse seed representatives")
+    parser.add_argument('--local-refine-budget', type=int, default=16, help="Extra benchmarks for nearest neighbors of the best representatives")
+    parser.add_argument('--local-refine-top-k', type=int, default=1, help="How many top representatives to use as local refinement anchors")
     parser.add_argument('--warmup-runs', type=int, default=10, help="Number of warmup runs before measurement")
     parser.add_argument('--benchmark-runs', type=int, default=100, help="Number of timed graph replays per IR")
 
@@ -959,6 +1057,8 @@ def main():
         optimized=args.optimized,
         max_benchmarks=args.max_benchmarks,
         seed_samples=args.seed_samples,
+        local_refine_budget=args.local_refine_budget,
+        local_refine_top_k=args.local_refine_top_k,
         warmup_runs=args.warmup_runs,
         benchmark_runs=args.benchmark_runs,
     )
