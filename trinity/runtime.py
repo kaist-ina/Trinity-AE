@@ -15,6 +15,7 @@ PROJECT_ROOT = THIS_DIR.parent
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
 OPTIMIZER_DIR = PROJECT_ROOT / "optimizer"
 BACKEND_DIR = PROJECT_ROOT / "backend"
+STANDARD_IR_DIR = PROJECT_ROOT / "standard_ir"
 
 
 def log(message: str, verbose: bool) -> None:
