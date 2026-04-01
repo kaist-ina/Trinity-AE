@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from ..artifacts import FrontendArtifacts
 from ..config import OptimizeConfig
-from ..runtime import FRONTEND_DIR, load_shapes, log, prepend_sys_path
+from ..runtime import FRONTEND_DIR, STANDARD_IR_DIR, load_shapes, log, prepend_sys_path
 from ..workspace import PipelineWorkspace
 
 
 class FrontendStage:
+    _STANDARD_IR_ALIASES = {
+        "vanila": "vanilla",
+    }
+
     def run(
         self,
         model: Any,
@@ -69,12 +74,35 @@ class FrontendStage:
             errors=errors,
         )
 
-    def load_existing(self, basename: str, workspace: PipelineWorkspace) -> FrontendArtifacts:
+    def _resolve_standard_ir_dir(self, basename: str) -> Path:
+        candidates = [
+            STANDARD_IR_DIR / basename,
+            STANDARD_IR_DIR / self._STANDARD_IR_ALIASES.get(basename, basename),
+        ]
+        for candidate in candidates:
+            if (candidate / "ir.txt").exists() and (candidate / "shapes.json").exists():
+                return candidate
+        raise FileNotFoundError(
+            f"Expected standard IR artifacts at one of {[str(path) for path in candidates]}, but they were not found."
+        )
+
+    def load_existing(
+        self,
+        basename: str,
+        workspace: PipelineWorkspace,
+        *,
+        use_standard_ir: bool = False,
+    ) -> FrontendArtifacts:
         workspace_ir_path = workspace.frontend_dir / "ir.txt"
         workspace_shapes_path = workspace.frontend_dir / "shapes.json"
 
-        source_ir_path = FRONTEND_DIR / "outputs" / "trinity" / basename / "ir.txt"
-        source_shapes_path = FRONTEND_DIR / "outputs" / "trinity" / basename / "shapes.json"
+        if use_standard_ir:
+            standard_ir_dir = self._resolve_standard_ir_dir(basename)
+            source_ir_path = standard_ir_dir / "ir.txt"
+            source_shapes_path = standard_ir_dir / "shapes.json"
+        else:
+            source_ir_path = FRONTEND_DIR / "outputs" / "trinity" / basename / "ir.txt"
+            source_shapes_path = FRONTEND_DIR / "outputs" / "trinity" / basename / "shapes.json"
 
         if workspace_ir_path.exists() and workspace_shapes_path.exists():
             source_ir_path = workspace_ir_path

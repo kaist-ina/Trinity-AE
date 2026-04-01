@@ -1,0 +1,90 @@
+{
+  "X": {
+    "shape": [16, 4096],
+    "type": "input"
+  },
+  "WQ": {
+    "shape": [4096, 4096],
+    "type": "input"
+  },
+  "WK": {
+    "shape": [4096, 4096],
+    "type": "input"
+  },
+  "WV": {
+    "shape": [4096, 4096],
+    "type": "input"
+  },
+  "K_cache": {
+    "shape": [32, 1024, 128],
+    "type": "input"
+  },
+  "V_cache": {
+    "shape": [32, 1024, 128],
+    "type": "input"
+  },
+  "Q1": {
+    "shape": [16, 4096],
+    "type": "intermediate"
+  },
+  "K1": {
+    "shape": [16, 4096],
+    "type": "intermediate"
+  },
+  "V1": {
+    "shape": [16, 4096],
+    "type": "intermediate"
+  },
+  "Q2": {
+    "shape": [16, 32, 128],
+    "type": "intermediate"
+  },
+  "K2": {
+    "shape": [16, 32, 128],
+    "type": "intermediate"
+  },
+  "V2": {
+    "shape": [16, 32, 128],
+    "type": "intermediate"
+  },
+  "Q": {
+    "shape": [32, 16, 128],
+    "type": "intermediate"
+  },
+  "K": {
+    "shape": [32, 16, 128],
+    "type": "intermediate"
+  },
+  "V": {
+    "shape": [32, 16, 128],
+    "type": "intermediate"
+  },
+  "C": {
+    "shape": [32, 16, 1024],
+    "type": "intermediate"
+  },
+  "C_exp": {
+    "shape": [32, 16, 1024],
+    "type": "intermediate"
+  },
+  "C_sum": {
+    "shape": [32, 16],
+    "type": "intermediate"
+  },
+  "C_div": {
+    "shape": [32, 16, 1024],
+    "type": "intermediate"
+  },
+  "O": {
+    "shape": [32, 16, 128],
+    "type": "intermediate"
+  },
+  "O1": {
+    "shape": [16, 32, 128],
+    "type": "intermediate"
+  },
+  "O2": {
+    "shape": [16, 4096],
+    "type": "output"
+  }
+}

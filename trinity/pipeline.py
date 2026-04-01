@@ -33,30 +33,37 @@ class TrinityPipeline:
         *,
         config: OptimizeConfig,
     ) -> OptimizeResult:
-        basename = config.basename or model.__class__.__name__
-        workspace = PipelineWorkspace.create(config.output_path, basename)
+        source_basename = config.basename or model.__class__.__name__
+        workspace_basename = (
+            f"{source_basename}_skip_fe" if config.skip_frontend else source_basename
+        )
+        workspace = PipelineWorkspace.create(config.output_path, workspace_basename)
         workspace.write_config(config)
 
-        log(f"Model: {basename}", config.verbose)
+        log(f"Model: {source_basename}", config.verbose)
         log(f"Config: cost={config.cost}, kern={config.kern}, device={config.device}", config.verbose)
 
         t0 = time.time()
 
         if config.skip_frontend:
-            frontend = self.frontend_stage.load_existing(basename, workspace)
-            log("Frontend   skipped (reusing existing IR)", config.verbose)
+            frontend = self.frontend_stage.load_existing(
+                source_basename,
+                workspace,
+                use_standard_ir=True,
+            )
+            log("Frontend   skipped (using standard_ir input)", config.verbose)
         else:
-            frontend = self.frontend_stage.run(model, example_inputs, basename, config, workspace)
+            frontend = self.frontend_stage.run(model, example_inputs, source_basename, config, workspace)
             log(
                 f"Frontend   complete ({len(frontend.tensor_shapes)} tensors, {len(frontend.errors)} validation errors)",
                 config.verbose,
             )
 
         if config.skip_optimizer:
-            optimizer = self.optimizer_stage.load_existing(basename, config, workspace)
+            optimizer = self.optimizer_stage.load_existing(workspace_basename, config, workspace)
             log("Optimizer  skipped (reusing existing expressions)", config.verbose)
         else:
-            optimizer = self.optimizer_stage.run(basename, frontend, config, workspace)
+            optimizer = self.optimizer_stage.run(workspace_basename, frontend, config, workspace)
             log(
                 f"Optimizer  complete ({optimizer.expression_count} expressions)",
                 config.verbose,
@@ -71,7 +78,7 @@ class TrinityPipeline:
             log("Backend    skipped (no expressions to profile)", config.verbose)
         elif config.skip_backend:
             backend = self.backend_stage.load_existing(
-                basename,
+                workspace_basename,
                 frontend,
                 optimizer,
                 workspace,
@@ -80,7 +87,7 @@ class TrinityPipeline:
             log("Backend    skipped (reusing existing benchmark if available)", config.verbose)
         else:
             backend = self.backend_stage.run(
-                basename,
+                workspace_basename,
                 frontend,
                 optimizer,
                 config,
