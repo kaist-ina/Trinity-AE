@@ -31,6 +31,11 @@ class OptimizeConfig:
     optimizer_iter_limit: int = 8
     optimizer_timeout_s: int = 3600
     backend_timeout_s: int = 9600
+    backend_optimized_benchmark: bool = True
+    backend_max_benchmarks: int = 64
+    backend_seed_samples: int = 16
+    backend_warmup_runs: int = 3
+    backend_benchmark_runs: int = 20
 
     @property
     def output_path(self) -> Path:

@@ -41,7 +41,27 @@ class BackendStage:
                 "--all",
                 "--output",
                 str(benchmark_path),
-            ],
+            ]
+            + (
+                [
+                    "--optimized",
+                    "--max-benchmarks",
+                    str(config.backend_max_benchmarks),
+                    "--seed-samples",
+                    str(config.backend_seed_samples),
+                    "--warmup-runs",
+                    str(config.backend_warmup_runs),
+                    "--benchmark-runs",
+                    str(config.backend_benchmark_runs),
+                ]
+                if config.backend_optimized_benchmark
+                else [
+                    "--warmup-runs",
+                    str(config.backend_warmup_runs),
+                    "--benchmark-runs",
+                    str(config.backend_benchmark_runs),
+                ]
+            ),
             cwd=str(BACKEND_DIR),
             env=env,
             capture_output=not config.verbose,
@@ -125,7 +145,9 @@ class BackendStage:
             and result["execution_time_ms"] != float("inf")
         ]
 
-        if not valid:
+        benchmarked_valid = [result for result in valid if result.get("benchmarked", True)]
+
+        if not benchmarked_valid and not valid:
             log("No valid kernels found.", verbose)
             return BackendArtifacts(
                 benchmark_path=benchmark_path,
@@ -133,7 +155,8 @@ class BackendStage:
                 all_results=all_results,
             )
 
-        best = min(valid, key=lambda result: result["execution_time_ms"])
+        best_pool = benchmarked_valid or valid
+        best = min(best_pool, key=lambda result: result["execution_time_ms"])
 
         with prepend_sys_path(BACKEND_DIR):
             from codegen.convert_module import convert_ir_to_triton  # type: ignore

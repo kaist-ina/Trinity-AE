@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from tqdm import tqdm
 import json
 import argparse
+import re
 
 try:
     # When running from repo root with -m backend.profile.benchmark
@@ -28,18 +29,46 @@ class BenchmarkResult:
     ir_expression: str
     execution_time: float
     error: Optional[str] = None
+    benchmarked: bool = True
+    source_ir_id: Optional[int] = None
+    predicted_execution_time: Optional[float] = None
+    selection_reason: Optional[str] = None
+
+
+@dataclass
+class ExpressionInfo:
+    ir_id: int
+    ir_expression: str
+    signature: str
+    features: np.ndarray
 
 
 class IRBenchmark:
-    def __init__(self, shapes_path: str):
+    _IR_KEYWORDS = {
+        "seq", "loop", "store", "load", "tensor", "input", "output", "index",
+        "fulltile", "elem", "tile", "const_tile", "+", "-", "*", "/", "@",
+        "exp", "sqr", "sqrt", "sigmoid", "cast", "rsum", "rmax", "rmin",
+        "bcast", "permute3", "permute4", "transpose", "unsqueeze", "squeeze",
+        "concat", "max", "min", "arange", "dummy", "let", "if", "else",
+    }
+
+    def __init__(
+        self,
+        shapes_path: str,
+        warmup_runs: int = 10,
+        benchmark_runs: int = 100,
+    ):
         """Initialize benchmark with shapes.json."""
         self.tensor_types: Dict[str, str] = {}
         self.tensor_shapes, self.tensor_types = self._load_shapes_json(shapes_path)
         self.shapes_path = shapes_path
+        self.warmup_runs = warmup_runs
+        self.benchmark_runs = benchmark_runs
 
         # Setup device
-        self.device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
-        torch.cuda.set_device(self.device)
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        if self.device.type == "cuda":
+            torch.cuda.set_device(self.device)
         print(f"GPU: {torch.cuda.get_device_name(self.device)}")
         # if self.device.type != 'cuda':
         #     raise RuntimeError("CUDA device not available. Triton requires CUDA.")
@@ -165,6 +194,273 @@ class IRBenchmark:
                             
         return expressions
 
+    def _tokenize_ir(self, ir_expr: str) -> List[str]:
+        return re.findall(r"\(|\)|[^\s()]+", ir_expr)
+
+    def _is_number_token(self, token: str) -> bool:
+        try:
+            float(token)
+            return True
+        except (TypeError, ValueError):
+            return False
+
+    def _canonicalize_ir(self, ir_expr: str) -> str:
+        mapping: Dict[str, str] = {}
+        tokens = self._tokenize_ir(ir_expr)
+        normalized = []
+        for token in tokens:
+            if token in {"(", ")"} or token in self._IR_KEYWORDS or self._is_number_token(token):
+                normalized.append(token)
+                continue
+            alias = mapping.get(token)
+            if alias is None:
+                alias = f"v{len(mapping)}"
+                mapping[token] = alias
+            normalized.append(alias)
+        return " ".join(normalized)
+
+    def _extract_loop_depth(self, tokens: List[str]) -> int:
+        stack: List[str] = []
+        max_depth = 0
+        for idx, token in enumerate(tokens):
+            if token == "(":
+                node_type = tokens[idx + 1] if idx + 1 < len(tokens) else ""
+                stack.append(node_type)
+                if node_type == "loop":
+                    max_depth = max(max_depth, sum(1 for item in stack if item == "loop"))
+            elif token == ")" and stack:
+                stack.pop()
+        return max_depth
+
+    def _extract_features(self, ir_expr: str) -> np.ndarray:
+        tokens = self._tokenize_ir(ir_expr)
+        token_counts = {token: tokens.count(token) for token in [
+            "loop", "store", "load", "@", "rsum", "rmax", "rmin",
+            "exp", "permute3", "transpose", "unsqueeze", "squeeze",
+            "bcast", "sqrt", "sigmoid", "concat", "cast", "fulltile",
+            "elem", "const_tile",
+        ]}
+        numeric_tokens = [float(token) for token in tokens if self._is_number_token(token)]
+        comma_tokens = sum(1 for token in tokens if "," in token)
+        return np.array([
+            float(len(tokens)),
+            float(token_counts["loop"]),
+            float(self._extract_loop_depth(tokens)),
+            float(token_counts["store"]),
+            float(token_counts["load"]),
+            float(token_counts["@"]),
+            float(token_counts["rsum"] + token_counts["rmax"] + token_counts["rmin"]),
+            float(token_counts["exp"]),
+            float(token_counts["permute3"] + token_counts["transpose"]),
+            float(token_counts["unsqueeze"] + token_counts["squeeze"]),
+            float(token_counts["bcast"]),
+            float(token_counts["sqrt"]),
+            float(token_counts["sigmoid"]),
+            float(token_counts["concat"]),
+            float(token_counts["cast"]),
+            float(token_counts["fulltile"]),
+            float(token_counts["elem"]),
+            float(token_counts["const_tile"]),
+            float(comma_tokens),
+            float(sum(numeric_tokens)),
+            float(max(numeric_tokens) if numeric_tokens else 0.0),
+        ], dtype=np.float64)
+
+    def build_expression_infos(self, expressions: List[Tuple[int, str]]) -> List[ExpressionInfo]:
+        infos: List[ExpressionInfo] = []
+        for ir_id, ir_expr in expressions:
+            infos.append(
+                ExpressionInfo(
+                    ir_id=ir_id,
+                    ir_expression=ir_expr,
+                    signature=self._canonicalize_ir(ir_expr),
+                    features=self._extract_features(ir_expr),
+                )
+            )
+        return infos
+
+    def _pick_diverse_seed_indices(self, infos: List[ExpressionInfo], count: int) -> List[int]:
+        if not infos or count <= 0:
+            return []
+        count = min(count, len(infos))
+        feature_matrix = np.stack([info.features for info in infos])
+        selected = [0]
+        if count == 1:
+            return selected
+        norms = np.linalg.norm(feature_matrix, axis=1)
+        farthest = int(np.argmax(norms))
+        if farthest not in selected:
+            selected.append(farthest)
+        while len(selected) < count:
+            selected_matrix = feature_matrix[selected]
+            distances = np.min(
+                np.linalg.norm(feature_matrix[:, None, :] - selected_matrix[None, :, :], axis=2),
+                axis=1,
+            )
+            for idx in selected:
+                distances[idx] = -1.0
+            next_idx = int(np.argmax(distances))
+            if next_idx in selected:
+                break
+            selected.append(next_idx)
+        return selected
+
+    def _predict_candidate_score(
+        self,
+        candidate: ExpressionInfo,
+        benchmarked_infos: List[ExpressionInfo],
+        benchmarked_results: List[BenchmarkResult],
+    ) -> Tuple[float, float]:
+        benchmark_matrix = np.stack([info.features for info in benchmarked_infos])
+        distances = np.linalg.norm(benchmark_matrix - candidate.features, axis=1)
+        neighbor_order = np.argsort(distances)
+        k = min(3, len(neighbor_order))
+        if k == 0:
+            return float("inf"), float("inf")
+        top_idx = neighbor_order[:k]
+        top_distances = distances[top_idx]
+        top_times = np.array([benchmarked_results[idx].execution_time for idx in top_idx], dtype=np.float64)
+        weights = 1.0 / np.maximum(top_distances, 1e-6)
+        predicted = float(np.dot(weights, top_times) / np.sum(weights))
+        uncertainty = float(np.mean(top_distances))
+        return predicted, uncertainty
+
+    def _select_optimized_expression_indices(
+        self,
+        unique_infos: List[ExpressionInfo],
+        max_benchmarks: int,
+        seed_samples: int,
+    ) -> List[int]:
+        if len(unique_infos) <= max_benchmarks:
+            return list(range(len(unique_infos)))
+        seed_count = min(max(1, seed_samples), max_benchmarks)
+        selected = self._pick_diverse_seed_indices(unique_infos, seed_count)
+        while len(selected) < max_benchmarks:
+            benchmarked_infos = [unique_infos[idx] for idx in selected]
+            remaining = [idx for idx in range(len(unique_infos)) if idx not in selected]
+            if not remaining:
+                break
+
+            benchmark_matrix = np.stack([info.features for info in benchmarked_infos])
+            best_idx = None
+            best_distance = -1.0
+            for idx in remaining:
+                distances = np.linalg.norm(benchmark_matrix - unique_infos[idx].features, axis=1)
+                min_distance = float(np.min(distances))
+                if min_distance > best_distance:
+                    best_distance = min_distance
+                    best_idx = idx
+            if best_idx is None:
+                break
+            selected.append(best_idx)
+        return selected
+
+    def _nearest_benchmarked_result(
+        self,
+        candidate: ExpressionInfo,
+        benchmarked_infos: List[ExpressionInfo],
+        benchmarked_results: List[BenchmarkResult],
+    ) -> Tuple[Optional[ExpressionInfo], Optional[BenchmarkResult], float, float]:
+        if not benchmarked_infos:
+            return None, None, float("inf"), float("inf")
+
+        benchmark_matrix = np.stack([info.features for info in benchmarked_infos])
+        distances = np.linalg.norm(benchmark_matrix - candidate.features, axis=1)
+        best_pos = int(np.argmin(distances))
+        nearest_info = benchmarked_infos[best_pos]
+        nearest_result = benchmarked_results[best_pos]
+        predicted, uncertainty = self._predict_candidate_score(
+            candidate,
+            benchmarked_infos,
+            benchmarked_results,
+        )
+        return nearest_info, nearest_result, predicted, uncertainty
+
+    def run_optimized_benchmarks(
+        self,
+        expressions: List[Tuple[int, str]],
+        max_benchmarks: int,
+        seed_samples: int,
+    ) -> List[BenchmarkResult]:
+        infos = self.build_expression_infos(expressions)
+        if not infos:
+            return []
+
+        signature_groups: Dict[str, List[ExpressionInfo]] = {}
+        for info in infos:
+            signature_groups.setdefault(info.signature, []).append(info)
+
+        unique_infos = [group[0] for group in signature_groups.values()]
+        selected_unique_indices = set(
+            self._select_optimized_expression_indices(unique_infos, max_benchmarks, seed_samples)
+        )
+
+        print(
+            "Optimized benchmarking:"
+            f" {len(expressions)} expressions, {len(unique_infos)} unique signatures,"
+            f" benchmarking {len(selected_unique_indices)} representatives"
+        )
+
+        representative_results: Dict[str, BenchmarkResult] = {}
+        benchmarked_infos: List[ExpressionInfo] = []
+        benchmarked_results: List[BenchmarkResult] = []
+
+        with tqdm(total=len(selected_unique_indices), desc="Benchmarking reps", unit="IR") as pbar:
+            for unique_idx, info in enumerate(unique_infos):
+                if unique_idx not in selected_unique_indices:
+                    continue
+                reason = "seed" if len(benchmarked_infos) < min(seed_samples, len(selected_unique_indices)) else "diverse"
+                result = self.run_single_benchmark(info.ir_id, info.ir_expression)
+                result.selection_reason = reason
+                representative_results[info.signature] = result
+                benchmarked_infos.append(info)
+                benchmarked_results.append(result)
+                pbar.update(1)
+                pbar.set_postfix(valid=sum(1 for r in benchmarked_results if r.error is None))
+
+        results: List[BenchmarkResult] = []
+        for info in infos:
+            representative = representative_results.get(info.signature)
+            if representative is not None:
+                if info.ir_id == representative.ir_id:
+                    results.append(representative)
+                else:
+                    results.append(
+                        BenchmarkResult(
+                            ir_id=info.ir_id,
+                            ir_expression=info.ir_expression,
+                            execution_time=representative.execution_time,
+                            error=representative.error,
+                            benchmarked=False,
+                            source_ir_id=representative.ir_id,
+                            predicted_execution_time=representative.execution_time,
+                            selection_reason="dedup",
+                        )
+                    )
+                continue
+
+            nearest_info, nearest_result, predicted, uncertainty = self._nearest_benchmarked_result(
+                info,
+                benchmarked_infos,
+                benchmarked_results,
+            )
+            predicted_error = nearest_result.error if nearest_result is not None else "No benchmark representative"
+            results.append(
+                BenchmarkResult(
+                    ir_id=info.ir_id,
+                    ir_expression=info.ir_expression,
+                    execution_time=predicted if predicted != float("inf") else float("inf"),
+                    error=predicted_error,
+                    benchmarked=False,
+                    source_ir_id=nearest_info.ir_id if nearest_info is not None else None,
+                    predicted_execution_time=predicted if predicted != float("inf") else None,
+                    selection_reason=f"predicted_nn_uncertainty={uncertainty:.4f}",
+                )
+            )
+
+        results.sort(key=lambda item: item.ir_id)
+        return results
+
     def generate_kernel_code(self, ir_expr: str, constants: Dict[str, int] = None) -> Optional[str]:
         """Generate Triton kernel code from IR expression.
         
@@ -225,9 +521,17 @@ class IRBenchmark:
                 os.unlink(temp_file)
             return None
 
-    def benchmark_kernel(self, kernel_module, ir_id, warmup_runs: int = 10, benchmark_runs: int = 100) -> float:
+    def benchmark_kernel(
+        self,
+        kernel_module,
+        ir_id,
+        warmup_runs: Optional[int] = None,
+        benchmark_runs: Optional[int] = None,
+    ) -> float:
         """Benchmark a single kernel and return execution time in milliseconds."""
         try:
+            warmup_runs = self.warmup_runs if warmup_runs is None else warmup_runs
+            benchmark_runs = self.benchmark_runs if benchmark_runs is None else benchmark_runs
             # Get metadata and forward function
             tensor_params = getattr(kernel_module, 'TENSOR_PARAMS', [])
             fp32_tensor_params = set(getattr(kernel_module, 'FP32_TENSOR_PARAMS', []))
@@ -330,7 +634,15 @@ class IRBenchmark:
             self.cleanup_gpu()
             return BenchmarkResult(ir_id, ir_expr, float('inf'), str(e))
 
-    def run_all_benchmarks(self, ir_file: str, min_expressions: Optional[int], num: Optional[int] = None) -> List[BenchmarkResult]:
+    def run_all_benchmarks(
+        self,
+        ir_file: str,
+        min_expressions: Optional[int],
+        num: Optional[int] = None,
+        optimized: bool = False,
+        max_benchmarks: int = 64,
+        seed_samples: int = 16,
+    ) -> List[BenchmarkResult]:
         """Run benchmarks for all IR expressions in the file."""
         # Parse IR expressions
         expressions = self.parse_ir_file(ir_file)
@@ -347,6 +659,12 @@ class IRBenchmark:
             expressions = filtered_expressions
         
         print(f"Found {len(expressions)} IR expressions to benchmark")
+        if optimized:
+            return self.run_optimized_benchmarks(
+                expressions,
+                max_benchmarks=max_benchmarks,
+                seed_samples=seed_samples,
+            )
         
         results = []
         # tqdm progress bar with update every 10 items
@@ -373,7 +691,11 @@ class IRBenchmark:
                 'ir_id': r.ir_id,
                 'ir_expression': r.ir_expression,
                 'execution_time_ms': r.execution_time,
-                'error': r.error
+                'error': r.error,
+                'benchmarked': r.benchmarked,
+                'source_ir_id': r.source_ir_id,
+                'predicted_execution_time_ms': r.predicted_execution_time,
+                'selection_reason': r.selection_reason,
             })
         
         with open(output_file, 'w') as f:
@@ -441,7 +763,18 @@ class IRBenchmark:
         self._temp_files = []
 
 
-def run_comprehensive_benchmark(shapes_path, ir_file, start_expressions, num_expressions, output_file):
+def run_comprehensive_benchmark(
+    shapes_path,
+    ir_file,
+    start_expressions,
+    num_expressions,
+    output_file,
+    optimized=False,
+    max_benchmarks=64,
+    seed_samples=16,
+    warmup_runs=10,
+    benchmark_runs=100,
+):
     """Run benchmarks for shapes.json."""
     all_results = []
     benchmark_instances = []
@@ -458,12 +791,23 @@ def run_comprehensive_benchmark(shapes_path, ir_file, start_expressions, num_exp
     with open(output_file, 'w') as f:
         json.dump([], f)
     
-    benchmark = IRBenchmark(shapes_path=shapes_path)
+    benchmark = IRBenchmark(
+        shapes_path=shapes_path,
+        warmup_runs=warmup_runs,
+        benchmark_runs=benchmark_runs,
+    )
     benchmark_instances.append(benchmark)
     
     try:
         # Run benchmarks for this tensor configuration
-        results = benchmark.run_all_benchmarks(ir_file, min_expressions=start_expressions, num=num_expressions)
+        results = benchmark.run_all_benchmarks(
+            ir_file,
+            min_expressions=start_expressions,
+            num=num_expressions,
+            optimized=optimized,
+            max_benchmarks=max_benchmarks,
+            seed_samples=seed_samples,
+        )
         
         # Store results with configuration info
         config_results = {
@@ -518,7 +862,11 @@ def save_incremental_results(config_results, output_file):
                 'ir_expression': result.ir_expression,
                 'execution_time_ms': result.execution_time,
                 'shapes_path': config_results.get('shapes_path'),
-                'error': result.error
+                'error': result.error,
+                'benchmarked': result.benchmarked,
+                'source_ir_id': result.source_ir_id,
+                'predicted_execution_time_ms': result.predicted_execution_time,
+                'selection_reason': result.selection_reason,
             })
     
     # Write back to file
@@ -571,6 +919,11 @@ def main():
     parser.add_argument('--topk', type=int, default=TOP_K, help="Number of top kernels to report")
     parser.add_argument('--all', action='store_true', help="Run all configurations comprehensively")
     parser.add_argument('--shapes', type=str, required=True, help="Path to shapes.json for tensor shapes")
+    parser.add_argument('--optimized', action='store_true', help="Benchmark only representative IRs and predict nearby candidates")
+    parser.add_argument('--max-benchmarks', type=int, default=64, help="Maximum number of representative IRs to benchmark")
+    parser.add_argument('--seed-samples', type=int, default=16, help="Number of diverse seed representatives")
+    parser.add_argument('--warmup-runs', type=int, default=10, help="Number of warmup runs before measurement")
+    parser.add_argument('--benchmark-runs', type=int, default=100, help="Number of timed graph replays per IR")
 
     args = parser.parse_args()
     
@@ -602,7 +955,12 @@ def main():
         args.ir,
         args.start,
         total_expressions,
-        args.output
+        args.output,
+        optimized=args.optimized,
+        max_benchmarks=args.max_benchmarks,
+        seed_samples=args.seed_samples,
+        warmup_runs=args.warmup_runs,
+        benchmark_runs=args.benchmark_runs,
     )
     
     print(f"\nAll results saved to: {args.output}")
