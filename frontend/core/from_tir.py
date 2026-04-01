@@ -104,6 +104,11 @@ def _extract_axes(prim_func: tir.PrimFunc) -> List[str]:
     return axes
 
 
+def _accumulate_with_identity(acc_value: T.ASTNode, update_value: T.ASTNode) -> T.ASTNode:
+    """Make reduction-style accumulation explicit as (+ (* acc 1) update)."""
+    return T.Add(T.Mul(acc_value, T.Const(1)), update_value)
+
+
 def _get_output_tensor_info(prim_func: tir.PrimFunc) -> T.TensorInfo:
     if hasattr(prim_func, "ret_buffer") and prim_func.ret_buffer is not None:
         return _buffer_to_tensor_info(prim_func.ret_buffer)
@@ -547,7 +552,7 @@ def _try_convert_matmul_block(block: tir.SBlock, visit_expr) -> Optional[T.ASTNo
     rhs_load = T.Load(rhs_tensor, T.Index(rhs_index_nodes))
 
     matmul_value = T.Matmul(lhs_load, rhs_load)
-    return T.Store(out_tensor, T.Add(out_load_node, matmul_value), out_index)
+    return T.Store(out_tensor, _accumulate_with_identity(out_load_node, matmul_value), out_index)
 
 def _try_convert_arange_block(block: tir.SBlock) -> Optional[T.ASTNode]:
     if not isinstance(block.body, tir.BufferStore):
@@ -707,7 +712,7 @@ def _try_convert_reducesum_block(block: tir.SBlock, visit_expr) -> Optional[T.AS
     out_tensor = T.Tensor(body_store.buffer.name.replace(".", "_"))
     out_index = T.Index(out_index_nodes)
     out_load = T.Load(out_tensor, out_index)
-    return T.Store(out_tensor, T.Add(out_load, reduce_value), out_index)
+    return T.Store(out_tensor, _accumulate_with_identity(out_load, reduce_value), out_index)
 
 def _try_convert_multi_reducesum_block(block: tir.SBlock, visit_expr) -> Optional[T.ASTNode]:
     if block.init is None:
@@ -803,7 +808,7 @@ def _try_convert_multi_reducesum_block(block: tir.SBlock, visit_expr) -> Optiona
         out_index = T.Index(out_index_nodes)
         out_load_node = T.Load(out_tensor, out_index)
         reduce_value = T.ReduceSum(visit_expr(in_expr), reduce_axis)
-        stores.append(T.Store(out_tensor, T.Add(out_load_node, reduce_value), out_index))
+        stores.append(T.Store(out_tensor, _accumulate_with_identity(out_load_node, reduce_value), out_index))
 
     if not stores:
         return None
@@ -1359,7 +1364,7 @@ def _mean_to_loop_ast(
     acc_load = T.Load(acc_tensor_node, out_index)
     acc_store = T.Store(
         acc_tensor_node,
-        T.Add(acc_load, rsum_value),
+        _accumulate_with_identity(acc_load, rsum_value),
         out_index,
     )
     loop_node = T.Loop(T.Const(0), T.Const(reduce_size), f"tile_{loop_var}", loop_var, acc_store)
