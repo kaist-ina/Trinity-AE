@@ -23,12 +23,12 @@ The script uses `sudo` for the optimizer packages, so it may prompt for your pas
 Place the vendored TVM wheel set in `third_party/wheels/` before running setup.
 For the current repository pin, that means:
 - `mlc_ai_nightly_cpu-0.20.dev908-py3-none-manylinux_2_28_x86_64.whl`
-- `apache_tvm_ffi-0.1.9-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl`
+- `apache_tvm_ffi-0.1.10rc1-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl`
 
 ```bash
 ls third_party/wheels/
 # example: mlc_ai_nightly_cpu-0.20.dev908-py3-none-manylinux_2_28_x86_64.whl
-# example: apache_tvm_ffi-0.1.9-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl
+# example: apache_tvm_ffi-0.1.10rc1-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl
 ```
 
 The installer is pinned to the vendored filenames above.

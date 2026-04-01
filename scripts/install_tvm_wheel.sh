@@ -11,7 +11,7 @@ PY
 )"
 
 main_wheel="$TVM_WHEEL_DIR/mlc_ai_nightly_cpu-0.20.dev908-py3-none-manylinux_2_28_x86_64.whl"
-ffi_wheel="$TVM_WHEEL_DIR/apache_tvm_ffi-0.1.9-${py_tag}-${py_tag}-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl"
+ffi_wheel="$TVM_WHEEL_DIR/apache_tvm_ffi-0.1.10rc1-${py_tag}-${py_tag}-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl"
 
 installable_wheels=("$ffi_wheel" "$main_wheel")
 
