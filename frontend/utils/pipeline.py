@@ -16,6 +16,7 @@ from utils.ir_utils import (
     inline_shape_op_calls,
     normalize_main_func_axes,
     plan_fusion_groups,
+    simplify_redundant_shape_ops,
     validate_fusion_groups,
 )
 from utils.test_utils import validate_main_func_errors
@@ -70,11 +71,14 @@ def export_model_ir(
     main_func_ir = sequentialize_main_func(main_func_ir)
     main_func_ir = bind_main_func_calls(main_func_ir)
     main_func_ir = normalize_main_func_axes(main_func_ir)
+    main_func_ir = simplify_redundant_shape_ops(main_func_ir)
     main_func_ir = filter_identity_and_apply_alias(main_func_ir)
     if inline_shape_op:
         main_func_ir = inline_shape_op_calls(main_func_ir)
+        main_func_ir = simplify_redundant_shape_ops(main_func_ir)
     if inline_elementwise_op:
         main_func_ir = inline_elementwise_op_calls(main_func_ir)
+        main_func_ir = simplify_redundant_shape_ops(main_func_ir)
     main_func_ir = eliminate_dead_seq_stores(main_func_ir)
     main_func_ir = eliminate_dead_calls(main_func_ir)
 

@@ -6,25 +6,38 @@ IR transformation, and execution, focused on transformer-style models.
 
 ## Environment
 - Python: **3.11**
-- Conda environment name: `tvm`
-- TVM version: **TVM Unity (Relax, MLC AI nightly)**
+- Conda environment name: `trinity`
+- TVM version: **vendored CPU wheel from `third_party/wheels/`**
 - PyTorch: **installed via pip in the conda env**
 
 
 ## Setup
-### 1. Create and activate the conda environment
+### 1. Add the vendored TVM wheel
+
+Put the vendored TVM wheel set in `../third_party/wheels/`.
+
+Example filenames:
+
+```bash
+../third_party/wheels/mlc_ai_nightly_cpu-0.20.dev908-py3-none-manylinux_2_28_x86_64.whl
+../third_party/wheels/apache_tvm_ffi-0.1.10rc1-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl
+```
+
+### 2. Create and activate the conda environment
 
 ```bash
 conda env create -f environment.yml
 conda activate trinity
+../scripts/install_tvm_wheel.sh
 ```
 
 If the environment already exists:
 ```bash
 conda activate trinity
+../scripts/install_tvm_wheel.sh
 ```
 
-### 2. Verify installation
+### 3. Verify installation
 ```bash
 python - <<'PY'
 import tvm
@@ -163,12 +176,4 @@ The CLI writes artifacts under `outputs/` by default:
 ## Notes
 - Targets TVM Unity (Relax), not legacy Relay.
 - Generated outputs are excluded from version control by design.
-- CUDA support is optional and configured per machine.
-
-
-## References
-TVM Unity Installation Guide
-https://llm.mlc.ai/docs/install/tvm.html
-
-TVM Relax (MLC AI)
-https://github.com/mlc-ai/relax
+- The recommended setup is a vendored CPU TVM wheel to avoid CUDA and driver coupling in the frontend.

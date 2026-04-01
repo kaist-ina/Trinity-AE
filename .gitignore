@@ -25,6 +25,14 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+!third_party/wheels/
+!third_party/wheels/README.md
+third_party/wheels/*.whl
+third_party/wheels/*.sha256
+!third_party/wheels/mlc_ai_nightly_cpu-0.20.dev908-py3-none-manylinux_2_28_x86_64.whl
+!third_party/wheels/mlc_ai_nightly_cpu-0.20.dev908-py3-none-manylinux_2_28_x86_64.whl.sha256
+!third_party/wheels/apache_tvm_ffi-0.1.10rc1-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl
+!third_party/wheels/apache_tvm_ffi-0.1.10rc1-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.sha256
 
 # PyInstaller
 #  Usually these files are written by a python script from a template

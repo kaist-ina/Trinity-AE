@@ -519,6 +519,114 @@ def normalize_main_func_axes(main_func: T.MainFunc) -> T.MainFunc:
         intermediate_tensors=main_func.intermediate_tensors,
     )
 
+
+def simplify_redundant_shape_ops(main_func: T.MainFunc) -> T.MainFunc:
+    """Remove locally redundant squeeze/unsqueeze pairs on the same axis."""
+
+    def simplify_node(node: T.ASTNode) -> T.ASTNode:
+        if isinstance(node, T.Store):
+            return T.Store(node.tensor, simplify_node(node.value), simplify_node(node.index))
+        if isinstance(node, T.Index):
+            return T.Index([simplify_node(idx) for idx in node.indices])
+        if isinstance(node, T.Load):
+            return T.Load(node.tensor, simplify_node(node.index))
+        if isinstance(node, T.Block):
+            return T.Block([simplify_node(stmt) for stmt in node.stmts])
+        if isinstance(node, T.Seq):
+            return T.Seq(simplify_node(node.left), simplify_node(node.right))
+        if isinstance(node, T.If):
+            cond = simplify_node(node.cond)
+            then_branch = simplify_node(node.then_branch)
+            else_branch = simplify_node(node.else_branch) if node.else_branch else None
+            return T.If(cond, then_branch, else_branch)
+        if isinstance(node, T.Let):
+            return T.Let(node.tensor, simplify_node(node.value), simplify_node(node.body))
+        if isinstance(node, T.Loop):
+            return T.Loop(node.start, node.end, node.tile_name, node.loop_var, simplify_node(node.body))
+        if isinstance(node, T.Add):
+            return T.Add(simplify_node(node.left), simplify_node(node.right))
+        if isinstance(node, T.Sub):
+            return T.Sub(simplify_node(node.left), simplify_node(node.right))
+        if isinstance(node, T.Mul):
+            return T.Mul(simplify_node(node.left), simplify_node(node.right))
+        if isinstance(node, T.Div):
+            return T.Div(simplify_node(node.left), simplify_node(node.right))
+        if isinstance(node, T.Max):
+            return T.Max(simplify_node(node.left), simplify_node(node.right))
+        if isinstance(node, T.Min):
+            return T.Min(simplify_node(node.left), simplify_node(node.right))
+        if isinstance(node, T.Exp):
+            return T.Exp(simplify_node(node.val))
+        if isinstance(node, T.Sqr):
+            return T.Sqr(simplify_node(node.val))
+        if isinstance(node, T.Sqrt):
+            return T.Sqrt(simplify_node(node.val))
+        if isinstance(node, T.Sigmoid):
+            return T.Sigmoid(simplify_node(node.val))
+        if isinstance(node, T.Matmul):
+            return T.Matmul(simplify_node(node.left), simplify_node(node.right))
+        if isinstance(node, T.Take):
+            return T.Take(
+                simplify_node(node.data),
+                simplify_node(node.indices),
+                node.axis,
+                simplify_node(node.index),
+            )
+        if isinstance(node, T.ReduceSum):
+            return T.ReduceSum(simplify_node(node.val), node.axis)
+        if isinstance(node, T.ReduceMax):
+            return T.ReduceMax(simplify_node(node.val), node.axis)
+        if isinstance(node, T.ReduceMin):
+            return T.ReduceMin(simplify_node(node.val), node.axis)
+        if isinstance(node, T.Concat):
+            return T.Concat(simplify_node(node.a), simplify_node(node.b), node.axis)
+        if isinstance(node, T.Broadcast):
+            return T.Broadcast(simplify_node(node.val), node.axis)
+        if isinstance(node, T.Permute3):
+            return T.Permute3(simplify_node(node.val), node.d0, node.d1, node.d2)
+        if isinstance(node, T.Squeeze):
+            value = simplify_node(node.val)
+            if isinstance(value, T.Unsqueeze) and value.axis == node.axis:
+                return value.val
+            return T.Squeeze(value, node.axis)
+        if isinstance(node, T.Unsqueeze):
+            value = simplify_node(node.val)
+            if isinstance(value, T.Squeeze) and value.axis == node.axis:
+                return value.val
+            return T.Unsqueeze(value, node.axis)
+        if isinstance(node, T.GenericBinary):
+            return T.GenericBinary(node.op, simplify_node(node.left), simplify_node(node.right))
+        if isinstance(node, T.GenericCall):
+            return T.GenericCall(node.func_name, [simplify_node(arg) for arg in node.args])
+        if isinstance(node, T.Cast):
+            return T.Cast(node.dtype, simplify_node(node.val))
+        return node
+
+    updated_calls: list[T.PrimFuncCall] = []
+    for call in main_func.calls:
+        updated_calls.append(
+            T.PrimFuncCall(
+                primfunc=T.PrimFunc(
+                    name=call.primfunc.name,
+                    input_tensors=call.primfunc.input_tensors,
+                    output_tensor=call.primfunc.output_tensor,
+                    spatial_axes=call.primfunc.spatial_axes,
+                    root_node=simplify_node(call.primfunc.root_node),
+                    allocated_tensors=call.primfunc.allocated_tensors,
+                ),
+                out_var_tensor=call.out_var_tensor,
+                input_tensors=call.input_tensors,
+                call_index=call.call_index,
+            )
+        )
+
+    return T.MainFunc(
+        calls=updated_calls,
+        input_tensors=main_func.input_tensors,
+        output_tensors=main_func.output_tensors,
+        intermediate_tensors=main_func.intermediate_tensors,
+    )
+
 def rename_loop_vars(node: T.ASTNode, rename_map: dict[str, str]) -> T.ASTNode:
     if isinstance(node, T.Tile):
         name = rename_map.get(node.name, node.name)

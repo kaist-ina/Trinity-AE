@@ -1,6 +1,8 @@
 from typing import List, Optional
-from tvm import tir
-from tvm import tir
+try:
+    from tvm import tir
+except ImportError:
+    from tvm import tirx as tir
 import ir.AST as T
 from utils.ir_utils import (
     remove_short_loop_nodes,
@@ -127,6 +129,10 @@ def _get_input_tensor_infos(prim_func: tir.PrimFunc) -> List[T.TensorInfo]:
 
 def _collect_allocated_tensors(prim_func: tir.PrimFunc) -> List[T.TensorInfo]:
     allocated: dict[str, T.TensorInfo] = {}
+    alloc_stmt_types = tuple(
+        t for t in (getattr(tir, "Allocate", None), getattr(tir, "AllocBuffer", None)) if t is not None
+    )
+    decl_buffer_type = getattr(tir, "DeclBuffer", None)
 
     def _register_alloc(name: str, shape: List[int], dtype: str) -> None:
         safe_name = name.replace(".", "_")
@@ -139,15 +145,22 @@ def _collect_allocated_tensors(prim_func: tir.PrimFunc) -> List[T.TensorInfo]:
             for buf in stmt.alloc_buffers:
                 info = _buffer_to_tensor_info(buf)
                 _register_alloc(info.name, info.shape, info.dtype)
-        elif isinstance(stmt, tir.Allocate):
-            shape: List[int] = []
-            for ext in stmt.extents:
-                ext_val = _primexpr_to_int(ext)
-                if ext_val is None:
-                    shape.append(ext)
-                else:
-                    shape.append(ext_val)
-            _register_alloc(stmt.buffer_var.name, shape, str(stmt.dtype))
+        elif alloc_stmt_types and isinstance(stmt, alloc_stmt_types):
+            if hasattr(stmt, "buffer"):
+                info = _buffer_to_tensor_info(stmt.buffer)
+                _register_alloc(info.name, info.shape, info.dtype)
+            else:
+                shape: List[int] = []
+                for ext in stmt.extents:
+                    ext_val = _primexpr_to_int(ext)
+                    if ext_val is None:
+                        shape.append(ext)
+                    else:
+                        shape.append(ext_val)
+                _register_alloc(stmt.buffer_var.name, shape, str(stmt.dtype))
+        elif decl_buffer_type is not None and isinstance(stmt, decl_buffer_type):
+            info = _buffer_to_tensor_info(stmt.buffer)
+            _register_alloc(info.name, info.shape, info.dtype)
 
     tir.stmt_functor.post_order_visit(prim_func.body, visit)
     return list(allocated.values())
@@ -590,9 +603,12 @@ def _collect_let_bindings(stmt) -> dict[str, tir.PrimExpr]:
     bindings: dict[str, tir.PrimExpr] = {}
     if stmt is None:
         return bindings
+    let_stmt_type = getattr(tir, "LetStmt", None)
+    if let_stmt_type is None:
+        return bindings
 
     def visit(s):
-        if isinstance(s, tir.LetStmt):
+        if isinstance(s, let_stmt_type):
             bindings[s.var.name] = s.value
 
     tir.stmt_functor.post_order_visit(stmt, visit)
@@ -1813,6 +1829,8 @@ def _convert_to_ast(
         elif isinstance(expr, tir.Call):
             op_name = expr.op.name if hasattr(expr.op, 'name') else str(expr.op)
             op_name = op_name.replace("tir.", "")
+            op_name = op_name.replace("tirx.", "")
+            op_name = op_name.replace("s_tir.", "")
             args = [visit_expr(arg) for arg in expr.args]
             
             # Mapping known intrinsics to User AST
@@ -1891,6 +1909,8 @@ def _convert_to_ast(
     # -----------------------------------------------------------
     # Statement Visitor: Returns ASTNode instances (Stmt)
     # -----------------------------------------------------------
+    shape_op_producers: dict[str, T.ASTNode] = {}
+
     def visit_stmt(stmt):
         def _index_key(idx: T.ASTNode) -> tuple:
             if isinstance(idx, T.Tile):
@@ -1969,7 +1989,21 @@ def _convert_to_ast(
                             else:
                                 new_indices.append(idx)
                         value: T.ASTNode = T.Load(node.tensor, T.Index(new_indices))
-                        for axis in sorted(const_axes + fulltile_axes, reverse=True):
+                        producer = shape_op_producers.get(node.tensor.name)
+                        protected_axes: set[int] = set()
+                        if isinstance(producer, T.Unsqueeze):
+                            protected_axes.add(producer.axis)
+
+                        squeeze_axes = [
+                            axis
+                            for axis in (const_axes + fulltile_axes)
+                            if axis not in protected_axes
+                        ]
+
+                        # If this load comes from a same-axis unsqueeze producer,
+                        # keep that explicit axis and avoid rebuilding
+                        # squeeze(unsqueeze(..., axis), axis).
+                        for axis in sorted(squeeze_axes, reverse=True):
                             value = T.Squeeze(value, axis)
                         for axis in sorted(const_axes + fulltile_axes):
                             value = T.Broadcast(value, axis)
@@ -2108,6 +2142,8 @@ def _convert_to_ast(
             value_node = visit_expr(stmt.value)
             out_shape = getattr(stmt.buffer, "shape", None)
             value_node = _insert_broadcasts(value_node, idx_nodes, out_shape)
+            safe_name = stmt.buffer.name.replace(".", "_")
+            shape_op_producers[safe_name] = value_node
             return T.Store(visit_expr(stmt.buffer), value_node, T.Index(idx_nodes))
             
         elif isinstance(stmt, tir.SeqStmt):
@@ -2130,7 +2166,7 @@ def _convert_to_ast(
         elif isinstance(stmt, tir.Evaluate):
             return visit_expr(stmt.value)
             
-        elif isinstance(stmt, tir.LetStmt):
+        elif getattr(tir, "LetStmt", None) is not None and isinstance(stmt, tir.LetStmt):
             var_name = stmt.var.name
             val_node = visit_expr(stmt.value)
             body_node = visit_stmt(stmt.body)

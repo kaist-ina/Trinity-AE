@@ -5,8 +5,12 @@ dependencies:
   - python=3.11
   - pip
   - pip:
-      - --pre
-      - -f https://mlc.ai/wheels
-      - mlc-ai-nightly-cpu
+      - cloudpickle
+      - ml_dtypes
       - numpy
+      - packaging
+      - psutil
+      - scipy
       - torch
+      - tornado
+      - typing_extensions
