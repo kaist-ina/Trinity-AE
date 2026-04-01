@@ -78,4 +78,4 @@ if __name__ == "__main__":
     noise = torch.randn((H, M, P + M))
 
     model = KeyformerAttn(M, H, D, P, K_cache, V_cache, tau, noise)
-    result = trinity.optimize(model, X, basename="keyformer", skip_frontend=True, verbose=True)
+    result = trinity.optimize(model, X, basename="keyformer", verbose=True)

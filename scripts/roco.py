@@ -1,15 +1,15 @@
-import sys
+import torch
+import torch.nn as nn
 from pathlib import Path
+import sys
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "frontend"))
 
-import torch
-import torch.nn as nn
 
 
-class RocoAttn(nn.Module):
+class RocoAttnWithStats(nn.Module):
     def __init__(self, M, H, D, P, cache_K, cache_V, device=None, dtype=None):
         super().__init__()
         self.M = M
@@ -51,20 +51,43 @@ class RocoAttn(nn.Module):
         c_div = c_exp / c_sum.unsqueeze(-1)
 
         o = torch.matmul(c_div, self.cache_V)
+        c_out1 = c_div.sum(dim=1)
+        c_out2 = (c_div * c_div).sum(dim=1)
+
         o1 = o.permute(1, 0, 2)
         o2 = o1.contiguous().view(self.M, self.N)
-        return o2
+        return o2, c_out1, c_out2
+
+
+def build_model_and_inputs():
+    device = torch.device("cpu")
+    dtype = torch.float32
+
+    M = 16
+    H = 32
+    D = 128
+    P = 1040
+
+    N = H * D
+    X = torch.randn((M, N), device=device, dtype=dtype)
+    K_cache = torch.randn((H, P, D), device=device, dtype=dtype)
+    V_cache = torch.randn((H, P, D), device=device, dtype=dtype)
+
+    model = RocoAttnWithStats(M, H, D, P, K_cache, V_cache, device=device, dtype=dtype)
+
+    print("Model created. Converting to Relax IR...")
+    example_inputs = X
+    return {
+        "model": model,
+        "example_inputs": example_inputs,
+        "inline_shape_op": True,
+        "inline_elementwise_op": True,
+        "remove_short_loop_threshold": 24,
+        "decompose_nested_op_ratio": 0.0,
+    }
 
 
 if __name__ == "__main__":
     import trinity
-
-    M, H, D, P = 16, 32, 128, 528
-    N = H * D
-
-    X = torch.randn((M, N))
-    K_cache = torch.randn((H, P, D))
-    V_cache = torch.randn((H, P, D))
-
-    model = RocoAttn(M, H, D, P, K_cache, V_cache)
-    result = trinity.optimize(model, X, basename="roco", skip_frontend=True, verbose=True)
+    cfg = build_model_and_inputs()
+    result = trinity.optimize(cfg["model"], cfg["example_inputs"], basename="roco")
