@@ -1,7 +1,10 @@
 from typing import List, Optional
 
 import tvm
-from tvm import tir, relax
+try:
+    from tvm import tir, relax
+except ImportError:
+    from tvm import tirx as tir, relax
 import ir.AST as T
 
 def build_main_func(

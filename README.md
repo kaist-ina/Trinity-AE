@@ -20,3 +20,8 @@ For detailed documentation, see the README in each directory:
 - [`frontend/`](frontend/README.md) — IR conversion details
 - [`optimizer/`](optimizer/README.md) — Equality saturation engine
 - [`backend/`](backend/README.md) — Triton code generation and profiling
+
+## Setup Note
+
+The frontend now expects a vendored CPU TVM wheel under `third_party/wheels/`.
+Run `./scripts/setup.sh` after placing the wheel there.

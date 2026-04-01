@@ -23,7 +23,7 @@ setup_conda() {
     echo "[frontend] Reusing existing conda environment: $CONDA_ENV_NAME"
   else
     echo "[frontend] Creating conda environment: $CONDA_ENV_NAME"
-    conda env create -f "$ROOT_DIR/frontend/environment.yml"
+    conda env create -n "$CONDA_ENV_NAME" -f "$ROOT_DIR/frontend/environment.yml"
   fi
 
   echo "[frontend] Activating conda environment: $CONDA_ENV_NAME"
@@ -52,6 +52,8 @@ setup_optimizer() {
 
 main() {
   setup_conda
+  echo "[frontend] Installing vendored TVM wheel"
+  "$ROOT_DIR/scripts/install_tvm_wheel.sh"
   setup_backend
   setup_optimizer
   echo "Setup complete."

@@ -38,8 +38,9 @@ class IRBenchmark:
         self.shapes_path = shapes_path
 
         # Setup device
-        self.device = torch.device('cuda:2' if torch.cuda.is_available() else 'cpu')
-        torch.cuda.set_device(self.device)
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        if self.device.type == 'cuda':
+            torch.cuda.set_device(self.device)
         print(f"GPU: {torch.cuda.get_device_name(self.device)}")
         # if self.device.type != 'cuda':
         #     raise RuntimeError("CUDA device not available. Triton requires CUDA.")
@@ -571,6 +572,13 @@ def main():
     parser.add_argument('--topk', type=int, default=TOP_K, help="Number of top kernels to report")
     parser.add_argument('--all', action='store_true', help="Run all configurations comprehensively")
     parser.add_argument('--shapes', type=str, required=True, help="Path to shapes.json for tensor shapes")
+    parser.add_argument('--optimized', action='store_true', help="Ignored compatibility flag")
+    parser.add_argument('--max-benchmarks', type=int, default=None, help="Ignored compatibility flag")
+    parser.add_argument('--seed-samples', type=int, default=None, help="Ignored compatibility flag")
+    parser.add_argument('--local-refine-budget', type=int, default=None, help="Ignored compatibility flag")
+    parser.add_argument('--local-refine-top-k', type=int, default=None, help="Ignored compatibility flag")
+    parser.add_argument('--warmup-runs', type=int, default=None, help="Ignored compatibility flag")
+    parser.add_argument('--benchmark-runs', type=int, default=None, help="Ignored compatibility flag")
 
     args = parser.parse_args()
     
