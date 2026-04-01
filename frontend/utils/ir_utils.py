@@ -758,7 +758,8 @@ def remove_short_loop_nodes(node, eliminated_vars=None, threshold=64):
     내부의 Tile 참조를 fulltile로 변경합니다.
     """
     if not isinstance(node, str):
-        return _replace_short_loops_with_fulltile(node, eliminated_vars or set(), threshold)
+        transformed = _replace_short_loops_with_fulltile(node, eliminated_vars or set(), threshold)
+        return _remove_redundant_self_accumulations(transformed)
 
     tokens = _tokenize_lisp(node)
     exprs = _parse_many(tokens)
@@ -772,7 +773,8 @@ def remove_smallest_inner_loops(node: T.ASTNode, max_extent: int = 384) -> T.AST
     whose extent is <= max_extent. Stop when the chain becomes 1-deep or no eligible
     inner loop remains.
     """
-    return _remove_smallest_inner_loops(node, max_extent=max_extent)
+    transformed = _remove_smallest_inner_loops(node, max_extent=max_extent)
+    return _remove_redundant_self_accumulations(transformed)
 
 def remove_let_nodes(root: T.ASTNode) -> T.ASTNode:
     """
@@ -3419,6 +3421,209 @@ def _remove_smallest_inner_loops(node: T.ASTNode, max_extent: int) -> T.ASTNode:
             _remove_smallest_inner_loops(transformed_root.body, max_extent),
         )
     return _remove_smallest_inner_loops(transformed_root, max_extent)
+
+
+def _collect_loop_vars_in_expr(node: T.ASTNode) -> set[str]:
+    vars_found: set[str] = set()
+
+    def add_name(name: str) -> None:
+        vars_found.add(_clean_var_name(name))
+
+    if isinstance(node, T.Tile):
+        add_name(node.name)
+    elif isinstance(node, T.TileOffset):
+        add_name(node.name)
+    elif isinstance(node, T.Elem):
+        add_name(node.name)
+    elif isinstance(node, T.VarRef):
+        add_name(node.name)
+    elif isinstance(node, T.Arange):
+        add_name(node.axis)
+    elif isinstance(node, T.Index):
+        for idx in node.indices:
+            vars_found.update(_collect_loop_vars_in_expr(idx))
+    elif isinstance(node, T.Load):
+        vars_found.update(_collect_loop_vars_in_expr(node.index))
+    elif isinstance(node, T.Store):
+        vars_found.update(_collect_loop_vars_in_expr(node.value))
+        vars_found.update(_collect_loop_vars_in_expr(node.index))
+    elif isinstance(node, T.Block):
+        for stmt in node.stmts:
+            vars_found.update(_collect_loop_vars_in_expr(stmt))
+    elif isinstance(node, T.If):
+        vars_found.update(_collect_loop_vars_in_expr(node.cond))
+        vars_found.update(_collect_loop_vars_in_expr(node.then_branch))
+        if node.else_branch:
+            vars_found.update(_collect_loop_vars_in_expr(node.else_branch))
+    elif isinstance(node, T.Let):
+        vars_found.update(_collect_loop_vars_in_expr(node.value))
+        vars_found.update(_collect_loop_vars_in_expr(node.body))
+    elif isinstance(node, T.Loop):
+        vars_found.update(_collect_loop_vars_in_expr(node.start))
+        vars_found.update(_collect_loop_vars_in_expr(node.end))
+        vars_found.update(_collect_loop_vars_in_expr(node.body))
+    elif isinstance(node, (T.Add, T.Sub, T.Mul, T.Div, T.Max, T.Min, T.Matmul, T.GenericBinary)):
+        vars_found.update(_collect_loop_vars_in_expr(node.left))
+        vars_found.update(_collect_loop_vars_in_expr(node.right))
+    elif isinstance(node, (T.Exp, T.Sqr, T.Sqrt, T.Sigmoid, T.Cast)):
+        vars_found.update(_collect_loop_vars_in_expr(node.val))
+    elif isinstance(node, (T.ReduceSum, T.ReduceMax, T.ReduceMin, T.Broadcast, T.Unsqueeze, T.Squeeze)):
+        vars_found.update(_collect_loop_vars_in_expr(node.val))
+    elif isinstance(node, T.Take):
+        vars_found.update(_collect_loop_vars_in_expr(node.data))
+        vars_found.update(_collect_loop_vars_in_expr(node.indices))
+        vars_found.update(_collect_loop_vars_in_expr(node.index))
+    elif isinstance(node, T.Concat):
+        vars_found.update(_collect_loop_vars_in_expr(node.a))
+        vars_found.update(_collect_loop_vars_in_expr(node.b))
+    elif isinstance(node, T.Permute3):
+        vars_found.update(_collect_loop_vars_in_expr(node.val))
+    elif isinstance(node, T.GenericCall):
+        for arg in node.args:
+            vars_found.update(_collect_loop_vars_in_expr(arg))
+
+    return vars_found
+
+
+def _unwrap_self_accumulation(
+    tensor: T.Tensor,
+    index: T.Index,
+    value: T.ASTNode,
+) -> T.ASTNode | None:
+    def is_identity_one(node: T.ASTNode) -> bool:
+        return isinstance(node, T.Const) and node.value == 1
+
+    def match_self_load(node: T.ASTNode) -> bool:
+        return (
+            isinstance(node, T.Load)
+            and node.tensor == tensor
+            and node.index == index
+        )
+
+    def match_identity_mul(node: T.ASTNode) -> bool:
+        if not isinstance(node, T.Mul):
+            return False
+        return (
+            (match_self_load(node.left) and is_identity_one(node.right))
+            or (match_self_load(node.right) and is_identity_one(node.left))
+        )
+
+    if not isinstance(value, T.Add):
+        return None
+    if match_identity_mul(value.left):
+        return value.right
+    if match_identity_mul(value.right):
+        return value.left
+    return None
+
+
+def _remove_redundant_self_accumulations(node: T.ASTNode) -> T.ASTNode:
+    if isinstance(node, T.Store):
+        value = _remove_redundant_self_accumulations(node.value)
+        index = _remove_redundant_self_accumulations(node.index)
+        simplified = _unwrap_self_accumulation(node.tensor, index, value) if isinstance(index, T.Index) else None
+        if simplified is not None:
+            update_loop_vars = _collect_loop_vars_in_expr(simplified)
+            store_loop_vars = _collect_loop_vars_in_expr(index)
+            if update_loop_vars.issubset(store_loop_vars):
+                value = simplified
+        return T.Store(node.tensor, value, index)
+    if isinstance(node, T.Index):
+        return T.Index([_remove_redundant_self_accumulations(idx) for idx in node.indices])
+    if isinstance(node, T.Load):
+        return T.Load(node.tensor, _remove_redundant_self_accumulations(node.index))
+    if isinstance(node, T.Block):
+        return T.Block([_remove_redundant_self_accumulations(stmt) for stmt in node.stmts])
+    if isinstance(node, T.If):
+        return T.If(
+            _remove_redundant_self_accumulations(node.cond),
+            _remove_redundant_self_accumulations(node.then_branch),
+            _remove_redundant_self_accumulations(node.else_branch) if node.else_branch else None,
+        )
+    if isinstance(node, T.Let):
+        return T.Let(
+            _remove_redundant_self_accumulations(node.tensor),
+            _remove_redundant_self_accumulations(node.value),
+            _remove_redundant_self_accumulations(node.body),
+        )
+    if isinstance(node, T.Loop):
+        return T.Loop(
+            _remove_redundant_self_accumulations(node.start),
+            _remove_redundant_self_accumulations(node.end),
+            node.tile_name,
+            node.loop_var,
+            _remove_redundant_self_accumulations(node.body),
+        )
+    if isinstance(node, T.Seq):
+        return T.Seq(
+            _remove_redundant_self_accumulations(node.left),
+            _remove_redundant_self_accumulations(node.right),
+        )
+    if isinstance(node, T.Add):
+        return T.Add(
+            _remove_redundant_self_accumulations(node.left),
+            _remove_redundant_self_accumulations(node.right),
+        )
+    if isinstance(node, T.Sub):
+        return T.Sub(
+            _remove_redundant_self_accumulations(node.left),
+            _remove_redundant_self_accumulations(node.right),
+        )
+    if isinstance(node, T.Mul):
+        return T.Mul(
+            _remove_redundant_self_accumulations(node.left),
+            _remove_redundant_self_accumulations(node.right),
+        )
+    if isinstance(node, T.Div):
+        return T.Div(
+            _remove_redundant_self_accumulations(node.left),
+            _remove_redundant_self_accumulations(node.right),
+        )
+    if isinstance(node, T.Max):
+        return T.Max(
+            _remove_redundant_self_accumulations(node.left),
+            _remove_redundant_self_accumulations(node.right),
+        )
+    if isinstance(node, T.Min):
+        return T.Min(
+            _remove_redundant_self_accumulations(node.left),
+            _remove_redundant_self_accumulations(node.right),
+        )
+    if isinstance(node, T.Matmul):
+        return T.Matmul(
+            _remove_redundant_self_accumulations(node.left),
+            _remove_redundant_self_accumulations(node.right),
+        )
+    if isinstance(node, (T.Exp, T.Sqr, T.Sqrt, T.Sigmoid)):
+        return node.__class__(_remove_redundant_self_accumulations(node.val))
+    if isinstance(node, T.Cast):
+        return T.Cast(node.dtype, _remove_redundant_self_accumulations(node.val))
+    if isinstance(node, T.Take):
+        return T.Take(
+            _remove_redundant_self_accumulations(node.data),
+            _remove_redundant_self_accumulations(node.indices),
+            node.axis,
+            _remove_redundant_self_accumulations(node.index),
+        )
+    if isinstance(node, (T.ReduceSum, T.ReduceMax, T.ReduceMin, T.Broadcast, T.Unsqueeze, T.Squeeze)):
+        return node.__class__(_remove_redundant_self_accumulations(node.val), node.axis)
+    if isinstance(node, T.Concat):
+        return T.Concat(
+            _remove_redundant_self_accumulations(node.a),
+            _remove_redundant_self_accumulations(node.b),
+            node.axis,
+        )
+    if isinstance(node, T.Permute3):
+        return T.Permute3(_remove_redundant_self_accumulations(node.val), node.d0, node.d1, node.d2)
+    if isinstance(node, T.GenericBinary):
+        return T.GenericBinary(
+            node.op,
+            _remove_redundant_self_accumulations(node.left),
+            _remove_redundant_self_accumulations(node.right),
+        )
+    if isinstance(node, T.GenericCall):
+        return T.GenericCall(node.func_name, [_remove_redundant_self_accumulations(arg) for arg in node.args])
+    return node
 
 def _tokenize_lisp(text: str) -> list[str]:
     tokens: list[str] = []
