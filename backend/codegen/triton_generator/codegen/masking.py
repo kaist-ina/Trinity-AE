@@ -66,6 +66,17 @@ class MaskGenerator:
                         else:
                             # Unknown symbolic size, need mask
                             tiles_needing_mask.append((pseudo_var, i, dim_size, dim_size))
+            elif child.node_type == NodeType.ELEM:
+                if (
+                    child.children
+                    and child.children[0].node_type == NodeType.VAR
+                    and tensor_name in self.state.tensor_shapes
+                    and i < len(self.state.tensor_shapes[tensor_name])
+                ):
+                    elem_var = child.children[0].value
+                    dim_size = self.state.tensor_shapes[tensor_name][i]
+                    block_param = f"BLOCK_{elem_var.upper()}"
+                    tiles_needing_mask.append((f"elem_{elem_var}", i, block_param, dim_size))
 
         if not tiles_needing_mask:
             return "", None
@@ -131,6 +142,26 @@ class MaskGenerator:
                     self.state.indices_loop_instance[indices_var] = self.state.current_loop_instance
 
                 # Add mask condition for fulltile
+                mask_conditions.append(f"{indices_var} < {dim_size}")
+            elif loop_var.startswith("elem_"):
+                elem_var = loop_var[len("elem_"):]
+                indices_var = f"{loop_var}_indices"
+                need_generate_indices = True
+                if indices_var in self.state.generated_indices:
+                    existing_scope = self.state.indices_scope_level.get(indices_var, 0)
+                    existing_loop_instance = self.state.indices_loop_instance.get(indices_var, None)
+                    if existing_scope <= self.state.indent_level and existing_loop_instance == self.state.current_loop_instance:
+                        need_generate_indices = False
+
+                if need_generate_indices:
+                    mask_code += (
+                        f"{indent_str}{indices_var} = "
+                        f"(({elem_var} // {block_param}) + tl.arange(0, 1))\n"
+                    )
+                    self.state.generated_indices[indices_var] = indices_var
+                    self.state.indices_scope_level[indices_var] = self.state.indent_level
+                    self.state.indices_loop_instance[indices_var] = self.state.current_loop_instance
+
                 mask_conditions.append(f"{indices_var} < {dim_size}")
             else:
                 # Regular tile handling

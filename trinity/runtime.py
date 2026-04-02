@@ -80,4 +80,4 @@ def load_kernel_from_file(kernel_path: Path) -> Optional[callable]:
 
 
 def build_cuda_visible(device: int) -> str:
-    return ",".join(str(device + offset) for offset in range(3))
+    return str(device)

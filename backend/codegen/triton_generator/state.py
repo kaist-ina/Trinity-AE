@@ -104,9 +104,10 @@ class CodeGenState:
     ) -> tuple[str, str, bool]:
         left_requires_fp32 = self.node_requires_fp32(left_node)
         right_requires_fp32 = self.node_requires_fp32(right_node)
+        store_requires_fp32 = self.current_store_requires_fp32()
         keep_fp32 = (
             force_fp32
-            or self.current_store_requires_fp32()
+            or store_requires_fp32
             or left_requires_fp32
             or right_requires_fp32
         )
@@ -115,8 +116,9 @@ class CodeGenState:
                 right = f"{right}.to(tl.float32)"
             elif right_requires_fp32 and not left_requires_fp32:
                 left = f"{left}.to(tl.float32)"
-            elif force_fp32 and not left_requires_fp32:
-                left = f"{left}.to(tl.float32)"
+            elif force_fp32 or store_requires_fp32:
+                if not left_requires_fp32:
+                    left = f"{left}.to(tl.float32)"
                 if not right_requires_fp32:
                     right = f"{right}.to(tl.float32)"
         return left, right, keep_fp32

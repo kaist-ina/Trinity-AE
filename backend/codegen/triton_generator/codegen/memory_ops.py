@@ -525,12 +525,6 @@ class MemoryOps:
         if tensor_name in fp32_tensors:
             value_expr = value_expr.replace('.to(tl.float16)', '')
 
-        if tensor_type == NodeType.OUTPUT:
-            contains_fp32 = self.state.node_requires_fp32(val_node)
-            if contains_fp32 or "tl.reshape" in value_expr or "tl.permute" in value_expr:
-                if not value_expr.endswith('.to(tl.float16)'):
-                    value_expr = f"{value_expr}.to(tl.float16)"
-
         # Use proper indentation based on current context
         indent_str = '    ' * self.state.indent_level
 
@@ -545,6 +539,14 @@ class MemoryOps:
             (tensor_type == NodeType.TENSOR and tensor_name in self.state.cross_kernel_tensors) or
             (tensor_type == NodeType.TENSOR and is_cross_sloop_memory)):
             # For output tensors, input tensors, and cross-kernel intermediates, use tl.store
+            dest_dtype = "tl.float32" if tensor_name in fp32_tensors else "tl.float16"
+            if dest_dtype == "tl.float16":
+                if not value_expr.endswith('.to(tl.float16)'):
+                    value_expr = f"{value_expr}.to(tl.float16)"
+            else:
+                value_expr = value_expr.replace('.to(tl.float16)', '')
+                if not value_expr.endswith('.to(tl.float32)'):
+                    value_expr = f"{value_expr}.to(tl.float32)"
 
             # Mark this accumulator as stored if it's in a loop
             if tensor_name in self.state.kernel_accumulators and hasattr(self.state, 'current_sloop_info') and self.state.current_sloop_info:

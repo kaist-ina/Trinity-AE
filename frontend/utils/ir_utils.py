@@ -362,6 +362,8 @@ def normalize_main_func_axes(main_func: T.MainFunc) -> T.MainFunc:
         return tiles
 
     def _is_tile_constant(tile: str) -> bool:
+        if tile.isdigit():
+            return True
         if not tile.startswith("tile_"):
             return False
         return tile[len("tile_"):].isdigit()
