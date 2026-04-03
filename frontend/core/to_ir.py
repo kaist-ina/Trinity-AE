@@ -586,16 +586,71 @@ def _filter_identity_and_apply_alias(main_func: T.MainFunc) -> T.MainFunc:
         # root = _inline_transpose_root(first_call) or first_call.primfunc.root_node
         root = first_call.primfunc.root_node
         filtered = [_apply_alias_to_call(first_call, alias, root)] + filtered[1:]
+    input_tensors, output_tensors, intermediate_tensors = _rewrite_tensor_metadata(
+        main_func,
+        filtered,
+        alias,
+    )
     return T.MainFunc(
         calls=filtered,
-        input_tensors=main_func.input_tensors,
-        output_tensors=main_func.output_tensors,
-        intermediate_tensors=main_func.intermediate_tensors,
+        # input_tensors=main_func.input_tensors,
+        # output_tensors=main_func.output_tensors,
+        # intermediate_tensors=main_func.intermediate_tensors,
+        input_tensors=input_tensors,
+        output_tensors=output_tensors,
+        intermediate_tensors=intermediate_tensors,
     )
 
 
 def filter_identity_and_apply_alias(main_func: T.MainFunc) -> T.MainFunc:
     return _filter_identity_and_apply_alias(main_func)
+
+
+def _rewrite_tensor_metadata(
+    main_func: T.MainFunc,
+    calls: List[T.PrimFuncCall],
+    alias: dict[str, str],
+) -> tuple[List[T.TensorInfo], List[T.TensorInfo], List[T.TensorInfo]]:
+    latest_by_name: dict[str, T.TensorInfo] = {}
+
+    def remember(tensor: T.TensorInfo) -> None:
+        latest_by_name[tensor.name] = T.TensorInfo(tensor.name, list(tensor.shape), tensor.dtype)
+
+    def rewrite_tensor(tensor: T.TensorInfo) -> T.TensorInfo:
+        aliased_name = alias.get(tensor.name, tensor.name)
+        latest = latest_by_name.get(aliased_name)
+        if latest is not None:
+            return T.TensorInfo(latest.name, list(latest.shape), latest.dtype)
+        return T.TensorInfo(aliased_name, list(tensor.shape), tensor.dtype)
+
+    def dedupe_keep_last(tensors: List[T.TensorInfo]) -> List[T.TensorInfo]:
+        ordered: dict[str, T.TensorInfo] = {}
+        for tensor in tensors:
+            ordered[tensor.name] = tensor
+        return list(ordered.values())
+
+    for call in calls:
+        for tensor in call.input_tensors:
+            remember(tensor)
+        remember(call.out_var_tensor)
+        for tensor in call.primfunc.input_tensors:
+            remember(tensor)
+        remember(call.primfunc.output_tensor)
+        for tensor in call.primfunc.allocated_tensors:
+            remember(tensor)
+
+    input_tensors = dedupe_keep_last([rewrite_tensor(t) for t in main_func.input_tensors])
+    output_tensors = dedupe_keep_last([rewrite_tensor(t) for t in main_func.output_tensors])
+
+    reserved_names = {tensor.name for tensor in input_tensors}
+    reserved_names.update(tensor.name for tensor in output_tensors)
+
+    rewritten_intermediates = [rewrite_tensor(t) for t in main_func.intermediate_tensors]
+    intermediate_tensors = dedupe_keep_last(
+        [tensor for tensor in rewritten_intermediates if tensor.name not in reserved_names]
+    )
+
+    return input_tensors, output_tensors, intermediate_tensors
 
 
 def calls_to_ir(main_func: T.MainFunc, level: int = 0, role_map=None) -> str:
