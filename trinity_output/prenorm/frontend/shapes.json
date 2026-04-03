@@ -1,0 +1,182 @@
+{
+  "x": {
+    "shape": [
+      16,
+      4096
+    ],
+    "type": "input"
+  },
+  "p_q_proj_weight": {
+    "shape": [
+      4096,
+      4096
+    ],
+    "type": "input"
+  },
+  "p_k_proj_weight": {
+    "shape": [
+      4096,
+      4096
+    ],
+    "type": "input"
+  },
+  "p_v_proj_weight": {
+    "shape": [
+      4096,
+      4096
+    ],
+    "type": "input"
+  },
+  "const_1": {
+    "shape": [
+      32,
+      1024,
+      128
+    ],
+    "type": "input"
+  },
+  "const_2": {
+    "shape": [
+      32,
+      1024,
+      128
+    ],
+    "type": "input"
+  },
+  "lv1": {
+    "shape": [
+      16
+    ],
+    "type": "intermediate"
+  },
+  "lv5": {
+    "shape": [
+      16,
+      4096
+    ],
+    "type": "intermediate"
+  },
+  "lv7": {
+    "shape": [
+      16,
+      4096
+    ],
+    "type": "intermediate"
+  },
+  "lv9": {
+    "shape": [
+      16,
+      4096
+    ],
+    "type": "intermediate"
+  },
+  "lv11": {
+    "shape": [
+      16,
+      4096
+    ],
+    "type": "intermediate"
+  },
+  "lv12": {
+    "shape": [
+      16,
+      32,
+      128
+    ],
+    "type": "intermediate"
+  },
+  "lv13": {
+    "shape": [
+      16,
+      32,
+      128
+    ],
+    "type": "intermediate"
+  },
+  "lv14": {
+    "shape": [
+      16,
+      32,
+      128
+    ],
+    "type": "intermediate"
+  },
+  "lv16": {
+    "shape": [
+      32,
+      16,
+      128
+    ],
+    "type": "intermediate"
+  },
+  "lv17": {
+    "shape": [
+      32,
+      16,
+      128
+    ],
+    "type": "intermediate"
+  },
+  "lv20": {
+    "shape": [
+      32,
+      128,
+      1024
+    ],
+    "type": "intermediate"
+  },
+  "lv23": {
+    "shape": [
+      32,
+      16,
+      1024
+    ],
+    "type": "intermediate"
+  },
+  "lv24": {
+    "shape": [
+      32,
+      16,
+      1024
+    ],
+    "type": "intermediate"
+  },
+  "lv25": {
+    "shape": [
+      32,
+      16
+    ],
+    "type": "intermediate"
+  },
+  "lv27": {
+    "shape": [
+      32,
+      16,
+      1024
+    ],
+    "type": "intermediate"
+  },
+  "lv30": {
+    "shape": [
+      32,
+      16,
+      128
+    ],
+    "type": "intermediate"
+  },
+  "lv31": {
+    "shape": [
+      16,
+      32,
+      128
+    ],
+    "type": "intermediate"
+  },
+  "lv32": {
+    "shape": [
+      16,
+      4096
+    ],
+    "type": "output"
+  }
+}

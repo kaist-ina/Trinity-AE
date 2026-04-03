@@ -1,0 +1,108 @@
+(seq
+  (loop 0 4096 tile_j j
+    (loop 0 4096 tile_i i
+      (store (tensor lv1,lv3,lv5)
+        (+ (* (load (tensor lv1,lv3,lv5) (index fulltile (tile j))) 1) (@ (load (input x) (index fulltile (tile i))) (transpose (load (input p_q_proj_weight,p_k_proj_weight,p_v_proj_weight) (index (tile j) (tile i))))))
+        (index fulltile (tile j))
+      )
+    )
+  )
+(seq
+  (loop 0 4096 128 j
+    (store (tensor lv6,lv7,lv8)
+      (unsqueeze (load (tensor lv1,lv3,lv5) (index fulltile (tile j))) 1)
+      (index fulltile (elem j) fulltile)
+    )
+  )
+(seq
+  (loop 0 32 tile_l l
+    (store (tensor lv9,lv10)
+      (permute3 (load (tensor lv7,lv8) (index fulltile (tile l) fulltile)) 1 0 2)
+      (index (tile l) fulltile fulltile)
+    )
+  )
+(seq
+  (loop 0 32 tile_l l
+    (store (input const_1,const_2)
+      (load (tensor lv9,lv10) (index (tile l) fulltile fulltile))
+      (index (tile l) (const_tile 1008 16) fulltile)
+    )
+  )
+(seq
+  (loop 0 32 tile_l l
+    (loop 0 1024 tile_m m
+      (store (tensor lv27)
+        (@ (permute3 (load (tensor lv6) (index fulltile (tile l) fulltile)) 1 0 2) (permute3 (load (input const_1) (index (tile l) (tile m) fulltile)) 0 2 1))
+        (index (tile l) fulltile (tile m))
+      )
+    )
+  )
+(seq
+  (seq
+    (loop 0 32 tile_l l
+      (loop 0 1024 tile_m m
+        (store (tensor T_softmax_maxelem)
+          (max (load (tensor T_softmax_maxelem) (index (tile l) fulltile)) (rmax (load (tensor lv27) (index (tile l) fulltile (tile m))) 2))
+          (index (tile l) fulltile)
+        )
+      )
+    )
+  (seq
+    (loop 0 32 tile_l l
+      (loop 0 1024 tile_m m
+        (store (tensor T_softmax_exp)
+          (exp (- (load (tensor lv27) (index (tile l) fulltile (tile m))) (bcast (load (tensor T_softmax_maxelem) (index (tile l) fulltile)) 2)))
+          (index (tile l) fulltile (tile m))
+        )
+      )
+    )
+  (seq
+    (loop 0 32 tile_l l
+      (loop 0 1024 tile_m m
+        (store (tensor T_softmax_expsum)
+          (+ (* (load (tensor T_softmax_expsum) (index (tile l) fulltile)) 1) (rsum (load (tensor T_softmax_exp) (index (tile l) fulltile (tile m))) 2))
+          (index (tile l) fulltile)
+        )
+      )
+    )
+  (loop 0 32 tile_l l
+    (loop 0 1024 tile_m m
+      (store (tensor lv28)
+        (/ (load (tensor T_softmax_exp) (index (tile l) fulltile (tile m))) (bcast (load (tensor T_softmax_expsum) (index (tile l) fulltile)) 2))
+        (index (tile l) fulltile (tile m))
+      )
+    )
+  )
+  )
+  )
+  )
+(seq
+  (loop 0 32 tile_l l
+    (loop 0 1024 tile_m m
+      (store (tensor lv31)
+        (+ (* (load (tensor lv31) (index (tile l) fulltile fulltile)) 1) (@ (load (tensor lv28) (index (tile l) fulltile (tile m))) (load (input const_2) (index (tile l) (tile m) fulltile))))
+        (index (tile l) fulltile fulltile)
+      )
+    )
+  )
+(seq
+  (loop 0 32 tile_l l
+    (store (tensor lv32)
+      (permute3 (load (tensor lv31) (index (tile l) fulltile fulltile)) 1 0 2)
+      (index fulltile (tile l) fulltile)
+    )
+  )
+(loop 0 4096 128 j
+  (store (output lv33)
+    (squeeze (load (tensor lv32) (index fulltile (elem j) fulltile)) 1)
+    (index fulltile (tile j))
+  )
+)
+)
+)
+)
+)
+)
+)
+)
+)
