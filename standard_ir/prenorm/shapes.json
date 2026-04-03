@@ -1,33 +1,115 @@
 {
-  "x": {
+  "X2": {
+    "shape": [
+      16
+    ],
+    "type": "intermediate"
+  },
+  "X": {
     "shape": [
       16,
       4096
     ],
     "type": "input"
   },
-  "p_q_proj_weight": {
+  "X_norm": {
+    "shape": [
+      16,
+      4096
+    ],
+    "type": "intermediate"
+  },
+  "Q1": {
+    "shape": [
+      16,
+      4096
+    ],
+    "type": "intermediate"
+  },
+  "K1": {
+    "shape": [
+      16,
+      4096
+    ],
+    "type": "intermediate"
+  },
+  "V1": {
+    "shape": [
+      16,
+      4096
+    ],
+    "type": "intermediate"
+  },
+  "WQ": {
     "shape": [
       4096,
       4096
     ],
     "type": "input"
   },
-  "p_k_proj_weight": {
+  "WK": {
     "shape": [
       4096,
       4096
     ],
     "type": "input"
   },
-  "p_v_proj_weight": {
+  "WV": {
     "shape": [
       4096,
       4096
     ],
     "type": "input"
   },
-  "const_1": {
+  "Q2": {
+    "shape": [
+      16,
+      32,
+      128
+    ],
+    "type": "intermediate"
+  },
+  "K2": {
+    "shape": [
+      16,
+      32,
+      128
+    ],
+    "type": "intermediate"
+  },
+  "V2": {
+    "shape": [
+      16,
+      32,
+      128
+    ],
+    "type": "intermediate"
+  },
+  "Q": {
+    "shape": [
+      32,
+      16,
+      128
+    ],
+    "type": "intermediate"
+  },
+  "K": {
+    "shape": [
+      32,
+      16,
+      128
+    ],
+    "type": "intermediate"
+  },
+  "V": {
+    "shape": [
+      32,
+      16,
+      128
+    ],
+    "type": "intermediate"
+  },
+  "K_cache": {
     "shape": [
       32,
       1024,
@@ -35,7 +117,7 @@
     ],
     "type": "input"
   },
-  "const_2": {
+  "V_cache": {
     "shape": [
       32,
       1024,
@@ -43,120 +125,38 @@
     ],
     "type": "input"
   },
-  "lv1": {
-    "shape": [
-      16
-    ],
-    "type": "intermediate"
-  },
-  "lv5": {
-    "shape": [
-      16,
-      4096
-    ],
-    "type": "intermediate"
-  },
-  "lv7": {
-    "shape": [
-      16,
-      4096
-    ],
-    "type": "intermediate"
-  },
-  "lv9": {
-    "shape": [
-      16,
-      4096
-    ],
-    "type": "intermediate"
-  },
-  "lv11": {
-    "shape": [
-      16,
-      4096
-    ],
-    "type": "intermediate"
-  },
-  "lv12": {
-    "shape": [
-      16,
-      32,
-      128
-    ],
-    "type": "intermediate"
-  },
-  "lv13": {
-    "shape": [
-      16,
-      32,
-      128
-    ],
-    "type": "intermediate"
-  },
-  "lv14": {
-    "shape": [
-      16,
-      32,
-      128
-    ],
-    "type": "intermediate"
-  },
-  "lv16": {
+  "C": {
     "shape": [
       32,
       16,
-      128
+      1024
     ],
     "type": "intermediate"
   },
-  "lv17": {
+  "C_exp": {
     "shape": [
       32,
       16,
-      128
+      1024
     ],
     "type": "intermediate"
   },
-  "lv20": {
-    "shape": [
-      32,
-      128,
-      1040
-    ],
-    "type": "intermediate"
-  },
-  "lv23": {
-    "shape": [
-      32,
-      16,
-      1040
-    ],
-    "type": "intermediate"
-  },
-  "lv24": {
-    "shape": [
-      32,
-      16,
-      1040
-    ],
-    "type": "intermediate"
-  },
-  "lv25": {
+  "C_sum": {
     "shape": [
       32,
       16
     ],
     "type": "intermediate"
   },
-  "lv27": {
+  "C_div": {
     "shape": [
       32,
       16,
-      1040
+      1024
     ],
     "type": "intermediate"
   },
-  "lv30": {
+  "O": {
     "shape": [
       32,
       16,
@@ -164,7 +164,7 @@
     ],
     "type": "intermediate"
   },
-  "lv31": {
+  "O1": {
     "shape": [
       16,
       32,
@@ -172,7 +172,7 @@
     ],
     "type": "intermediate"
   },
-  "lv32": {
+  "O2": {
     "shape": [
       16,
       4096

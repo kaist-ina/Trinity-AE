@@ -15,7 +15,6 @@ sys.path.insert(0, str(PROJECT_ROOT / "frontend"))
 import torch
 
 import trinity
-from scripts.gqa_vanilla import GQAVanilla
 from scripts.keyformer import KeyformerAttn
 from scripts.prenorm import PreNormAttn
 from scripts.qknorm import QKNormAttn
@@ -39,16 +38,6 @@ def build_vanilla() -> tuple[Any, Any, str, dict[str, Any]]:
     v_cache = torch.randn((h, p + m, d))
     model = Vanilla(m, n, d, p, k_cache, v_cache)
     return model, x, "vanilla", {}
-
-
-def build_gqa_vanilla() -> tuple[Any, Any, str, dict[str, Any]]:
-    m, qh, d, p = 16, 32, 128, 1008
-    n = qh * d
-    x = torch.randn((m, n))
-    k_cache = torch.randn((qh, p + m, d))
-    v_cache = torch.randn((qh, p + m, d))
-    model = GQAVanilla(m, qh, d, p, k_cache, v_cache)
-    return model, x, "gqa_vanilla", {}
 
 
 def build_keyformer() -> tuple[Any, Any, str, dict[str, Any]]:
@@ -95,7 +84,6 @@ def build_roco() -> tuple[Any, Any, str, dict[str, Any]]:
 
 
 MODEL_BUILDERS = {
-    "gqa_vanilla": build_gqa_vanilla,
     "keyformer": build_keyformer,
     "pernorm": build_prenorm,
     "qknorm": build_qknorm,

@@ -1015,7 +1015,6 @@ def main():
     parser.add_argument('--topk', type=int, default=TOP_K, help="Number of top kernels to report")
     parser.add_argument('--all', action='store_true', help="Run all configurations comprehensively")
     parser.add_argument('--shapes', type=str, required=True, help="Path to shapes.json for tensor shapes")
-<<<<<<< HEAD
     parser.add_argument('--optimized', action='store_true', help="Benchmark only representative IRs and predict nearby candidates")
     parser.add_argument('--max-benchmarks', type=int, default=64, help="Maximum number of representative IRs to benchmark")
     parser.add_argument('--seed-samples', type=int, default=16, help="Number of diverse seed representatives")
@@ -1023,15 +1022,6 @@ def main():
     parser.add_argument('--local-refine-top-k', type=int, default=1, help="How many top representatives to use as local refinement anchors")
     parser.add_argument('--warmup-runs', type=int, default=10, help="Number of warmup runs before measurement")
     parser.add_argument('--benchmark-runs', type=int, default=100, help="Number of timed graph replays per IR")
-=======
-    parser.add_argument('--optimized', action='store_true', help="Ignored compatibility flag")
-    parser.add_argument('--max-benchmarks', type=int, default=None, help="Ignored compatibility flag")
-    parser.add_argument('--seed-samples', type=int, default=None, help="Ignored compatibility flag")
-    parser.add_argument('--local-refine-budget', type=int, default=None, help="Ignored compatibility flag")
-    parser.add_argument('--local-refine-top-k', type=int, default=None, help="Ignored compatibility flag")
-    parser.add_argument('--warmup-runs', type=int, default=None, help="Ignored compatibility flag")
-    parser.add_argument('--benchmark-runs', type=int, default=None, help="Ignored compatibility flag")
->>>>>>> public-main
 
     args = parser.parse_args()
     

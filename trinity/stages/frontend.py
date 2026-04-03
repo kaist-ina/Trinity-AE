@@ -104,7 +104,7 @@ class FrontendStage:
             source_ir_path = FRONTEND_DIR / "outputs" / "trinity" / basename / "ir.txt"
             source_shapes_path = FRONTEND_DIR / "outputs" / "trinity" / basename / "shapes.json"
 
-        if workspace_ir_path.exists() and workspace_shapes_path.exists():
+        if not use_standard_ir and workspace_ir_path.exists() and workspace_shapes_path.exists():
             source_ir_path = workspace_ir_path
             source_shapes_path = workspace_shapes_path
 

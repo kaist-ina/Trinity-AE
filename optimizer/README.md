@@ -25,7 +25,7 @@ optimizer/
 │   ├── keyformer.rs        # Keyformer
 │   ├── roco.rs             # RoCo
 │   ├── ffn.rs              # Feed-forward network
-│   └── gqa_vanilla.rs      # Grouped Query Attention
+│   └── ...
 ├── expressions/            # Generated expression outputs
 │   └── semi/               # Intermediate results (JSON)
 ├── egg/                    # egg library for equality saturation(local fork)

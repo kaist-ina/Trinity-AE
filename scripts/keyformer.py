@@ -68,13 +68,13 @@ class KeyformerAttn(nn.Module):
 if __name__ == "__main__":
     import trinity
 
-    M, H, D, P = 16, 32, 128, 1024
+    M, H, D, P = 16, 32, 128, 1008
     N = H * D
 
     X = torch.randn((M, N))
     K_cache = torch.randn((H, P, D))
     V_cache = torch.randn((H, P, D))
-    tau = torch.tensor(1.0)
+    tau = torch.tensor(1.5)
     noise = torch.randn((H, M, P + M))
 
     model = KeyformerAttn(M, H, D, P, K_cache, V_cache, tau, noise)

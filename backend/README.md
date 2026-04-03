@@ -129,56 +129,6 @@ python run_eval.py [options]
 ### Examples
 
 ```bash
-<<<<<<< HEAD
-# Convert and benchmark llama vanilla attention with all baselines
-python run_eval.py --o 2 --m llama --t vanilla --n 946
-
-# Convert and benchmark falcon ffn (case 2248)
-python run_eval.py --o 2 --m falcon --t ffn --n 2248
-
-# Only convert IR to Triton code
-python run_eval.py --o 0 --m llama --t prenorm --n 579
-
-# Run benchmark with baseline comparison (torch inductor)
-python run_eval.py --o 2 --m llama --t vanilla --n 946 --baseline inductor
-```
-### Input & Output
-- Input IR expression file: `results/{method}/{method}_{model}_case{n}.txt`
-- Output generated Triton code: `results/{method}/{method}_{model}_benchmark{n}.py`
-- Benchmark results will print to stdout
-
-## Model Configurations
-
-| Model  | sequence length (M) | head dimension (D)  | hidden dimension (N)   | head number (H) |
-|--------|----|----|------|-----|
-| LLaMA  | 16 | 128 | 4096 | 32  |
-| Falcon | 16 | 64  | 4544 | 71  |
-
-You can modify tensor sizes by editing `model_configs.json`.
-
-## Appendix
-
-### IR Formatting Helper
-
-`format.py` is a helper script that formats LISP-style IR expressions for better readability.
-
-```bash
-python format.py [options]
-
-# Options:
-#   --n : Case number to format
-#   --m : Model type (llama, falcon)
-#   --t : Architecture type (vanilla, prenorm, qknorm, keyformer, roco, ffn)
-```
-
-#### Example
-```bash
-# Format llama vanilla IR case 946
-python format.py --n 946 --m llama --t vanilla
-```
-
-The formatted output will overwrite the original file at `results/{t}/{t}_{m}_case{n}.txt`.
-=======
 # Vanilla Attention (LLaMA)
 python -m backend.profile.benchmark \
   --shapes backend/profile/shapes/vanilla_llama.json \
@@ -238,4 +188,3 @@ Both formats are supported:
 - `input`: Input tensors (random initialization)
 - `intermediate`: Intermediate tensors (zero initialization)
 - `output`: Output tensors (zero initialization)
->>>>>>> origin/main

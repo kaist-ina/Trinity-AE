@@ -60,7 +60,7 @@ class PreNormAttn(nn.Module):
 if __name__ == "__main__":
     import trinity
 
-    M, H, D, P = 16, 32, 128, 1024
+    M, H, D, P = 16, 32, 128, 1008
     N = H * D
 
     X = torch.randn((M, N))

@@ -16,7 +16,7 @@ class OptimizeConfig:
 
     basename: Optional[str] = None
     cost: int = 6
-    kern: int = 1
+    kern: int = 2
     output_dir: Union[str, Path] = _PROJECT_ROOT / "trinity_output"
     device: int = 0
     inline_shape_op: bool = True
