@@ -165,24 +165,63 @@ class AccumulatorAnalysis:
     def identify_fp32_tensors(self, ast: ASTNode) -> set:
         """Identify intermediate tensors that should stay in fp32."""
         fp32_tensors = set()
-        fp32_dependent_tensors = set()
 
-        def find_fp32_stores(node: ASTNode):
+        def collect_loaded_tensor_names(node: ASTNode, output_set: set):
+            if node.node_type == NodeType.LOAD and len(node.children) >= 1:
+                tensor_node = node.children[0]
+                if tensor_node.node_type in [NodeType.INPUT, NodeType.OUTPUT, NodeType.TENSOR]:
+                    for child in tensor_node.children:
+                        if child.node_type == NodeType.VAR:
+                            output_set.add(child.value)
+
+            for child in node.children:
+                if isinstance(child, ASTNode):
+                    collect_loaded_tensor_names(child, output_set)
+
+        def seed_fp32_source_tensors(node: ASTNode, output_set: set):
+            if node.node_type in [NodeType.EXP, NodeType.SQRT, NodeType.SIGMOID, NodeType.ERF]:
+                for child in node.children:
+                    if isinstance(child, ASTNode):
+                        collect_loaded_tensor_names(child, output_set)
+
+            for child in node.children:
+                if isinstance(child, ASTNode):
+                    seed_fp32_source_tensors(child, output_set)
+
+        def mark_fp32_store_targets(node: ASTNode, known_fp32_tensors: set, output_set: set):
             if node.node_type == NodeType.STORE and len(node.children) >= 2:
                 tensor_node = node.children[0]
                 value_node = node.children[1]
 
-                if self.contains_fp32_promoting_operation(value_node):
-                    if tensor_node.node_type == NodeType.TENSOR:
-                        for child in tensor_node.children:
-                            if child.node_type == NodeType.VAR:
-                                fp32_tensors.add(child.value)
+                if tensor_node.node_type == NodeType.TENSOR:
+                    if len(tensor_node.children) > 1:
+                        for i, child in enumerate(tensor_node.children):
+                            if child.node_type != NodeType.VAR:
+                                continue
+                            relevant_value = self.gen.memory.replace_multi_tensor_loads(
+                                value_node, i
+                            )
+                            should_keep_fp32 = (
+                                self.contains_fp32_promoting_operation(relevant_value)
+                                or self.uses_fp32_tensors(relevant_value, known_fp32_tensors)
+                            )
+                            if should_keep_fp32:
+                                output_set.add(child.value)
+                    else:
+                        should_keep_fp32 = (
+                            self.contains_fp32_promoting_operation(value_node)
+                            or self.uses_fp32_tensors(value_node, known_fp32_tensors)
+                        )
+                        if should_keep_fp32:
+                            for child in tensor_node.children:
+                                if child.node_type == NodeType.VAR:
+                                    output_set.add(child.value)
 
             for child in node.children:
                 if isinstance(child, ASTNode):
-                    find_fp32_stores(child)
+                    mark_fp32_store_targets(child, known_fp32_tensors, output_set)
 
-        def find_fp32_dependencies(node: ASTNode):
+        def find_fp32_dependencies(node: ASTNode, known_fp32_tensors: set, output_set: set):
             if node.node_type == NodeType.STORE and len(node.children) >= 2:
                 tensor_node = node.children[0]
                 value_node = node.children[1]
@@ -200,21 +239,23 @@ class AccumulatorAnalysis:
                         else:
                             relevant_value = value_node
 
-                        if self.uses_fp32_tensors(relevant_value, fp32_tensors):
-                            fp32_dependent_tensors.add(stored_tensor)
+                        if self.uses_fp32_tensors(relevant_value, known_fp32_tensors):
+                            output_set.add(stored_tensor)
 
             for child in node.children:
                 if isinstance(child, ASTNode):
-                    find_fp32_dependencies(child)
+                    find_fp32_dependencies(child, known_fp32_tensors, output_set)
 
-        find_fp32_stores(ast)
+        seed_fp32_source_tensors(ast, fp32_tensors)
 
-        prev_size = 0
-        while len(fp32_tensors) != prev_size:
+        changed = True
+        while changed:
             prev_size = len(fp32_tensors)
-            find_fp32_dependencies(ast)
-            fp32_tensors.update(fp32_dependent_tensors)
-            fp32_dependent_tensors.clear()
+            newly_fp32_tensors = set()
+            mark_fp32_store_targets(ast, fp32_tensors, newly_fp32_tensors)
+            find_fp32_dependencies(ast, fp32_tensors | newly_fp32_tensors, newly_fp32_tensors)
+            fp32_tensors.update(newly_fp32_tensors)
+            changed = len(fp32_tensors) != prev_size
 
         return fp32_tensors
 
