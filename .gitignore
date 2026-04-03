@@ -217,6 +217,7 @@ __marimo__/
 # Trinity outputs
 frontend/outputs/
 trinity_output/**/optimizer/
+trinity_output/batch_runs/
 optimizer/expressions/
 backend/profile_result/
 backend/codegen/triton_generator_backup/
