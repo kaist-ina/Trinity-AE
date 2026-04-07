@@ -11,6 +11,52 @@ from utils.ir_utils import (
     decompose_operations,
 )
 
+def _collect_reduce_tensor_axes(node: T.ASTNode) -> dict:
+    """Walk the AST and collect {tensor_name: reduce_axis} for Store nodes
+    whose value contains a ReduceSum/ReduceMax/ReduceMin at the top level
+    (possibly wrapped in an accumulate pattern)."""
+    result: dict = {}
+
+    def _find_reduce(val: T.ASTNode) -> Optional[int]:
+        if isinstance(val, (T.ReduceSum, T.ReduceMax, T.ReduceMin)):
+            return val.axis
+        # accumulate pattern: Add(Mul(load, 1), reduce) or Add(load, reduce)
+        if isinstance(val, T.Add):
+            axis = _find_reduce(val.left)
+            if axis is not None:
+                return axis
+            return _find_reduce(val.right)
+        if isinstance(val, T.Mul):
+            axis = _find_reduce(val.left)
+            if axis is not None:
+                return axis
+            return _find_reduce(val.right)
+        # GenericCall wrapping max/min reducers
+        if isinstance(val, T.GenericCall):
+            for arg in val.args:
+                axis = _find_reduce(arg)
+                if axis is not None:
+                    return axis
+        return None
+
+    def visit(n: T.ASTNode) -> None:
+        if isinstance(n, T.Store):
+            axis = _find_reduce(n.value)
+            if axis is not None and hasattr(n.tensor, 'name'):
+                result[n.tensor.name] = axis
+        if isinstance(n, T.Block):
+            for s in n.stmts:
+                visit(s)
+        if isinstance(n, T.Loop):
+            visit(n.body)
+        if isinstance(n, T.Seq):
+            visit(n.left)
+            visit(n.right)
+
+    visit(node)
+    return result
+
+
 def build_primfunc_nodes(
     tir_mod,
     tmp_ratio: float = 0.3,
@@ -45,6 +91,25 @@ def build_primfunc_nodes(
         input_tensors = _get_input_tensor_infos(func)
         output_tensor = _get_output_tensor_info(func)
         allocated_tensors = _collect_allocated_tensors(func)
+
+        # Drop the reduced dimension from tensor shapes to match the
+        # Triton-style store indices (tl.sum removes the reduction axis).
+        reduce_axes = _collect_reduce_tensor_axes(root_node)
+        for tname, raxis in reduce_axes.items():
+            if tname == output_tensor.name and raxis < len(output_tensor.shape):
+                output_tensor = T.TensorInfo(
+                    name=output_tensor.name,
+                    shape=output_tensor.shape[:raxis] + output_tensor.shape[raxis + 1:],
+                    dtype=output_tensor.dtype,
+                )
+            for i, at in enumerate(allocated_tensors):
+                if at.name == tname and raxis < len(at.shape):
+                    allocated_tensors[i] = T.TensorInfo(
+                        name=at.name,
+                        shape=at.shape[:raxis] + at.shape[raxis + 1:],
+                        dtype=at.dtype,
+                    )
+
         tensor_info_map = {t.name: t for t in input_tensors + [output_tensor] + allocated_tensors}
 
         tmp_tensors: List[T.TensorInfo] = []
@@ -715,15 +780,20 @@ def _try_convert_reducesum_block(block: tir.SBlock, visit_expr) -> Optional[T.AS
             return T.TileOffset(idx_expr.b.name, int(idx_expr.a.value))
         return visit_expr(idx_expr)
 
-    out_index_nodes: List[T.ASTNode] = []
-    for idx in body_store.indices:
-        if isinstance(idx, tir.Var) and idx.same_as(reduce_var):
-            return None
-        out_index_nodes.append(_index_expr_to_ast(idx))
-
     reduce_axis = _find_reduce_axis_in_expr(in_load, reduce_var)
     if reduce_axis is None:
         return None
+
+    # Drop the reduced dimension from store indices (Triton semantics:
+    # tl.sum removes the reduction axis rather than keeping it as size-1).
+    out_index_nodes: List[T.ASTNode] = []
+    for dim_idx, idx in enumerate(body_store.indices):
+        if isinstance(idx, tir.Var) and idx.same_as(reduce_var):
+            return None
+        if dim_idx == reduce_axis:
+            continue
+        out_index_nodes.append(_index_expr_to_ast(idx))
+
     reduce_value = T.ReduceSum(visit_expr(in_load), reduce_axis)
     out_tensor = T.Tensor(body_store.buffer.name.replace(".", "_"))
     out_index = T.Index(out_index_nodes)
@@ -819,7 +889,12 @@ def _try_convert_multi_reducesum_block(block: tir.SBlock, visit_expr) -> Optiona
         if reduce_axis is None:
             return None
 
-        out_index_nodes = [_index_expr_to_ast(idx) for idx in body_store.indices]
+        # Drop the reduced dimension from store indices (Triton semantics).
+        out_index_nodes = [
+            _index_expr_to_ast(idx)
+            for dim_idx, idx in enumerate(body_store.indices)
+            if dim_idx != reduce_axis
+        ]
         out_tensor = T.Tensor(body_store.buffer.name.replace(".", "_"))
         out_index = T.Index(out_index_nodes)
         out_load_node = T.Load(out_tensor, out_index)
@@ -907,7 +982,12 @@ def _try_convert_reducemaxmin_block(block: tir.SBlock, visit_expr) -> Optional[T
     if reduce_axis is None:
         return None
 
-    out_index_nodes = [_index_expr_to_ast(idx) for idx in body_store.indices]
+    # Drop the reduced dimension from store indices (Triton semantics).
+    out_index_nodes = [
+        _index_expr_to_ast(idx)
+        for dim_idx, idx in enumerate(body_store.indices)
+        if dim_idx != reduce_axis
+    ]
 
     out_tensor = T.Tensor(body_store.buffer.name.replace(".", "_"))
     out_index = T.Index(out_index_nodes)
@@ -1011,7 +1091,12 @@ def _try_convert_multi_reducemaxmin_block(block: tir.SBlock, visit_expr) -> Opti
         if reduce_axis is None:
             return None
 
-        out_index_nodes = [_index_expr_to_ast(idx) for idx in body_store.indices]
+        # Drop the reduced dimension from store indices (Triton semantics).
+        out_index_nodes = [
+            _index_expr_to_ast(idx)
+            for dim_idx, idx in enumerate(body_store.indices)
+            if dim_idx != reduce_axis
+        ]
         out_tensor = T.Tensor(body_store.buffer.name.replace(".", "_"))
         out_index = T.Index(out_index_nodes)
         out_load_node = T.Load(out_tensor, out_index)
@@ -1129,30 +1214,36 @@ def _broadcast_to_loop_ast(
     if len(in_dims) > len(out_dims):
         return None
 
-    offset = len(out_dims) - len(in_dims)
     loop_vars = [f"ax{i}" for i in range(len(out_dims))]
     out_indices = [T.Tile(v) for v in loop_vars]
 
+    # Match input dims to output dims greedily.
+    # An input dim matches an output dim if they are equal or if the
+    # input dim is 1 (size-1 broadcast).  Output dims with no matching
+    # input dim are new broadcast axes.
     input_indices: List[T.ASTNode] = []
     broadcast_axes: List[int] = []
-    for in_idx, dim in enumerate(in_dims):
-        out_idx = in_idx + offset
-        if dim == out_dims[out_idx]:
-            input_indices.append(T.Tile(loop_vars[out_idx]))
-        elif dim == 1:
-            input_indices.append(T.FullTile())
-            if out_dims[out_idx] > 1:
+    in_ptr = 0
+    for out_idx, odim in enumerate(out_dims):
+        if in_ptr < len(in_dims):
+            idim = in_dims[in_ptr]
+            if idim == odim:
+                input_indices.append(T.Tile(loop_vars[out_idx]))
+                in_ptr += 1
+                continue
+            elif idim == 1 and odim > 1:
+                input_indices.append(T.FullTile())
                 broadcast_axes.append(out_idx)
-        else:
-            return None
-    if offset > 0:
-        broadcast_axes.extend(list(range(offset)))
+                in_ptr += 1
+                continue
+        # No matching input dim — this is a pure broadcast axis.
+        broadcast_axes.append(out_idx)
+
+    if in_ptr != len(in_dims):
+        return None
 
     load = T.Load(T.Tensor(input_tensor.name), T.Index(input_indices))
     value: T.ASTNode = load
-    squeeze_axes = [axis for axis in broadcast_axes if axis >= offset]
-    for axis in sorted(set(squeeze_axes), reverse=True):
-        value = T.Squeeze(value, axis)
     for axis in sorted(set(broadcast_axes)):
         value = T.Broadcast(value, axis)
     store = T.Store(T.Tensor(output_tensor.name), value, T.Index(out_indices))
@@ -1372,9 +1463,10 @@ def _mean_to_loop_ast(
         else:
             input_indices.append(T.FullTile())
 
-    out_indices = [T.FullTile() for _ in out_dims]
+    # Drop the reduced dimension from output indices (Triton semantics:
+    # tl.sum removes the reduction axis rather than keeping it as size-1).
+    out_indices = [T.FullTile() for i in range(len(out_dims)) if i != axis]
     rsum_value = T.ReduceSum(T.Load(T.Tensor(input_tensor.name), T.Index(input_indices)), axis)
-    rsum_value = T.Unsqueeze(rsum_value, axis)
     acc_tensor_node = T.Tensor(acc_tensor.name)
     out_index = T.Index(out_indices)
     acc_load = T.Load(acc_tensor_node, out_index)
@@ -1894,7 +1986,7 @@ def _convert_to_ast(
                     idx_nodes.append(T.TileOffset(idx.b.name, int(idx.a.value)))
                 else:
                     idx_nodes.append(visit_expr(idx))
-            
+
             return T.Load(visit_expr(expr.buffer), T.Index(idx_nodes))
 
         # 5. Atomic
@@ -1982,30 +2074,29 @@ def _convert_to_ast(
                         ):
                             fulltile_axes.append(axis)
                     if const_axes or fulltile_axes:
-                        new_indices: List[T.ASTNode] = []
-                        for axis, idx in enumerate(load_indices):
-                            if axis in const_axes:
-                                new_indices.append(T.FullTile())
-                            else:
-                                new_indices.append(idx)
-                        value: T.ASTNode = T.Load(node.tensor, T.Index(new_indices))
+                        broadcast_axes = sorted(set(const_axes + fulltile_axes))
                         producer = shape_op_producers.get(node.tensor.name)
                         protected_axes: set[int] = set()
                         if isinstance(producer, T.Unsqueeze):
                             protected_axes.add(producer.axis)
 
-                        squeeze_axes = [
-                            axis
-                            for axis in (const_axes + fulltile_axes)
+                        # Axes whose size-1 dim should be dropped from the
+                        # load (Triton semantics — reductions remove the
+                        # axis).  Unsqueeze-produced axes are kept.
+                        drop_axes = set(
+                            axis for axis in broadcast_axes
                             if axis not in protected_axes
-                        ]
-
-                        # If this load comes from a same-axis unsqueeze producer,
-                        # keep that explicit axis and avoid rebuilding
-                        # squeeze(unsqueeze(..., axis), axis).
-                        for axis in sorted(squeeze_axes, reverse=True):
-                            value = T.Squeeze(value, axis)
-                        for axis in sorted(const_axes + fulltile_axes):
+                        )
+                        new_indices: List[T.ASTNode] = []
+                        for axis, idx in enumerate(load_indices):
+                            if axis in drop_axes:
+                                continue
+                            if axis in const_axes:
+                                new_indices.append(T.FullTile())
+                            else:
+                                new_indices.append(idx)
+                        value: T.ASTNode = T.Load(node.tensor, T.Index(new_indices))
+                        for axis in broadcast_axes:
                             value = T.Broadcast(value, axis)
                         return value
                 return node

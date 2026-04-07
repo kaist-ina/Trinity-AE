@@ -26,7 +26,16 @@ def bind_primfunc_to_call(call: T.PrimFuncCall) -> T.PrimFunc:
             rename_map[input_tensor.name] = call.input_tensors[idx].name
     rename_map[primfunc.output_tensor.name] = call.out_var_tensor.name
 
-    new_inputs = [_rename_tensor_info(t, rename_map) for t in primfunc.input_tensors]
+    new_inputs = []
+    for idx, t in enumerate(primfunc.input_tensors):
+        renamed = _rename_tensor_info(t, rename_map)
+        # If the call-level tensor has fewer dims (e.g. reduction axis
+        # dropped), adopt the caller's shape so metadata stays consistent.
+        if idx < len(call.input_tensors):
+            caller_shape = call.input_tensors[idx].shape
+            if len(caller_shape) < len(renamed.shape):
+                renamed = T.TensorInfo(renamed.name, list(caller_shape), renamed.dtype)
+        new_inputs.append(renamed)
     new_output = _rename_tensor_info(primfunc.output_tensor, rename_map)
     new_root = _rename_tensor_nodes(primfunc.root_node, rename_map)
     return T.PrimFunc(
@@ -372,9 +381,15 @@ def normalize_main_func_axes(main_func: T.MainFunc) -> T.MainFunc:
         if axis_tile is None:
             return None in group_tiles
         if _is_tile_constant(axis_tile):
-            return axis_tile in group_tiles
-        # Treat any tile variable as compatible with other tile variables.
-        return any(t is not None and not _is_tile_constant(t) for t in group_tiles)
+            # A constant tile is compatible with the same constant or
+            # with any variable tile (they share the same axis, just
+            # with different tile sizes).
+            if axis_tile in group_tiles:
+                return True
+            return any(t is not None and not _is_tile_constant(t) for t in group_tiles)
+        # Treat any tile variable as compatible with other tile variables
+        # or with constant tiles on the same axis.
+        return any(t is not None for t in group_tiles)
 
     def access_compatible(
         access: dict[str, set[int]],

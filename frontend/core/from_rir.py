@@ -103,6 +103,18 @@ def build_main_func(
 
             out_var = binding.var
             out_info = _struct_info_to_tensor_info(out_var.struct_info, out_var.name_hint)
+
+            # If the PrimFunc's output shape was adjusted (e.g. reduction
+            # axis dropped to follow Triton semantics), propagate that
+            # shape so downstream consumers see the reduced rank.
+            pf_out_shape = primfunc.output_tensor.shape
+            if len(pf_out_shape) < len(out_info.shape):
+                out_info = T.TensorInfo(
+                    name=out_info.name,
+                    shape=list(pf_out_shape),
+                    dtype=out_info.dtype,
+                )
+
             intermediate_tensors.append(out_info)
 
             input_values: List[T.TensorInfo] = []

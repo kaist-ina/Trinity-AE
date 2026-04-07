@@ -214,6 +214,34 @@ def _is_simple_identity_index(node: T.ASTNode) -> bool:
     return False
 
 
+def _is_expand_dims_alias(call: T.PrimFuncCall) -> bool:
+    """Return True if the call is an expand_dims (unsqueeze) that only adds
+    a size-1 dimension.  These are redundant under Triton semantics where
+    reductions already drop the axis and consumers broadcast directly."""
+    if len(call.input_tensors) != 1:
+        return False
+    in_shape = call.input_tensors[0].shape
+    out_shape = call.out_var_tensor.shape
+    if len(out_shape) != len(in_shape) + 1:
+        return False
+    # The extra dimension must be size 1.
+    store = _extract_single_store(call.primfunc.root_node)
+    if store is None:
+        return False
+    value = store.value
+    if not isinstance(value, T.Unsqueeze):
+        return False
+    axis = value.axis
+    if axis < 0 or axis > len(in_shape):
+        return False
+    expected = list(in_shape)
+    expected.insert(axis, 1)
+    out_ints = [d if isinstance(d, int) else None for d in out_shape]
+    if out_ints != expected:
+        return False
+    return True
+
+
 def _analyze_identity_call(call: T.PrimFuncCall) -> tuple[bool, str]:
     store = _extract_single_store(call.primfunc.root_node)
     if store is None:
@@ -547,6 +575,16 @@ def _filter_identity_and_apply_alias_calls(
             dst = call.out_var_tensor.name
             if _IR_DEBUG:
                 print(f"[filter_identity] alias {dst} -> {src} ({call.primfunc.name}, call {call.call_index})")
+            alias[dst] = alias.get(src, src)
+            continue
+        # Treat expand_dims (unsqueeze adding a size-1 dim) as alias-able:
+        # Triton semantics drops the reduction axis, so the expand_dims
+        # that re-adds it is redundant — consumers can broadcast directly.
+        if _is_expand_dims_alias(call):
+            src = call.input_tensors[0].name
+            dst = call.out_var_tensor.name
+            if _IR_DEBUG:
+                print(f"[filter_identity] alias {dst} -> {src} ({call.primfunc.name}, call {call.call_index}, expand_dims)")
             alias[dst] = alias.get(src, src)
             continue
         scatter_like, scatter_reason, scatter_base, _, scatter_root = _analyze_copy_then_const_tile_overwrite_call(call)
