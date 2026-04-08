@@ -728,6 +728,20 @@ class IRBenchmark:
             return BenchmarkResult(ir_id, ir_expr, exec_time)
             
         except Exception as e:
+            # Save kernel code for debugging
+            debug_dir = os.path.join(os.path.dirname(__file__), "debug")
+            os.makedirs(debug_dir, exist_ok=True)
+            debug_path = os.path.join(debug_dir, f"kernel_{ir_id}.py")
+            try:
+                with open(debug_path, "w") as f:
+                    f.write(f"# IR ID: {ir_id}\n")
+                    f.write(f"# Error: {e}\n")
+                    f.write(f"# IR expr: {ir_expr}\n\n")
+                    if kernel_code is not None:
+                        f.write(kernel_code)
+                print(f"Debug kernel saved to: {debug_path}")
+            except Exception:
+                pass
             # Clean up GPU memory even on error
             self.cleanup_gpu()
             return BenchmarkResult(ir_id, ir_expr, float('inf'), str(e))
