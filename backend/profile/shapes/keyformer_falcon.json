@@ -68,11 +68,11 @@
       "type": "intermediate"
     },
     "K_cache": {
-      "shape": [71, 1040, 64],
+      "shape": [71, 1024, 64],
       "type": "input"
     },
     "V_cache": {
-      "shape": [71, 1040, 64],
+      "shape": [71, 1024, 64],
       "type": "input"
     },
     "C": {
@@ -80,11 +80,11 @@
       "type": "intermediate"
     },
     "C_exp": {
-      "shape": [71, 16, 1040],
+      "shape": [71, 16, 1024],
       "type": "intermediate"
     },
     "C_div": {
-      "shape": [71, 16, 1040],
+      "shape": [71, 16, 1024],
       "type": "intermediate"
     },
     "C_sum": {
@@ -92,15 +92,15 @@
       "type": "intermediate"
     },
     "noise": {
-      "shape": [71, 16, 1040],
+      "shape": [71, 16, 1024],
       "type": "input"
     },
     "C_perturb": {
-      "shape": [71, 16, 1040],
+      "shape": [71, 16, 1024],
       "type": "intermediate"
     },
     "C_exp_perturb": {
-      "shape": [71, 16, 1040],
+      "shape": [71, 16, 1024],
       "type": "intermediate"
     },
     "C_sum_perturb": {
@@ -108,11 +108,11 @@
       "type": "intermediate"
     },
     "C_div_perturb": {
-      "shape": [71, 16, 1040],
+      "shape": [71, 16, 1024],
       "type": "intermediate"
     },
     "C_out": {
-      "shape": [71, 1040],
+      "shape": [71, 1024],
       "type": "intermediate"
     },
     "O": {

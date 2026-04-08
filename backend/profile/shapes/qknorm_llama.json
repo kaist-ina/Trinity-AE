@@ -84,11 +84,11 @@
       "type": "intermediate"
     },
     "K_cache": {
-      "shape": [32, 1040, 128],
+      "shape": [32, 1024, 128],
       "type": "input"
     },
     "V_cache": {
-      "shape": [32, 1040, 128],
+      "shape": [32, 1024, 128],
       "type": "input"
     },
     "C": {
@@ -96,11 +96,11 @@
       "type": "intermediate"
     },
     "C_exp": {
-      "shape": [32, 16, 1040],
+      "shape": [32, 16, 1024],
       "type": "intermediate"
     },
     "C_div": {
-      "shape": [32, 16, 1040],
+      "shape": [32, 16, 1024],
       "type": "intermediate"
     },
     "C_sum": {

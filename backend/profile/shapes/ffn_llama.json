@@ -2,7 +2,7 @@
   "config": {
     "M": 16,
     "N": 4096,
-    "P": 11008
+    "P": 16384
   },
   "tensors": {
     "O2": {
@@ -34,27 +34,27 @@
       "type": "intermediate"
     },
     "WFF1a": {
-      "shape": [4096, 11008],
+      "shape": [4096, 16384],
       "type": "input"
     },
     "WFF1b": {
-      "shape": [4096, 11008],
+      "shape": [4096, 16384],
       "type": "input"
     },
     "FF1a": {
-      "shape": [16, 11008],
+      "shape": [16, 16384],
       "type": "intermediate"
     },
     "FF1b": {
-      "shape": [16, 11008],
+      "shape": [16, 16384],
       "type": "intermediate"
     },
     "FF1b_silu": {
-      "shape": [16, 11008],
+      "shape": [16, 16384],
       "type": "intermediate"
     },
     "FF1": {
-      "shape": [16, 11008],
+      "shape": [16, 16384],
       "type": "intermediate"
     },
     "FF2": {
@@ -62,7 +62,7 @@
       "type": "intermediate"
     },
     "WFF2": {
-      "shape": [11008, 4096],
+      "shape": [16384, 4096],
       "type": "input"
     },
     "O_FF": {

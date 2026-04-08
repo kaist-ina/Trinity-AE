@@ -4,7 +4,7 @@
     "N": 4544,
     "D": 64,
     "H": 71,
-    "P": 512
+    "P": 1024
   },
   "tensors": {
     "X": {
@@ -68,23 +68,23 @@
       "type": "intermediate"
     },
     "K_cache": {
-      "shape": [71, 528, 64],
+      "shape": [71, 1024, 64],
       "type": "input"
     },
     "V_cache": {
-      "shape": [71, 528, 64],
+      "shape": [71, 1024, 64],
       "type": "input"
     },
     "C": {
-      "shape": [71, 16, 512],
+      "shape": [71, 16, 1024],
       "type": "intermediate"
     },
     "C_exp": {
-      "shape": [71, 16, 528],
+      "shape": [71, 16, 1024],
       "type": "intermediate"
     },
     "C_div": {
-      "shape": [71, 16, 528],
+      "shape": [71, 16, 1024],
       "type": "intermediate"
     },
     "C_sum": {
