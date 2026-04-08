@@ -65,6 +65,9 @@ class BackendStage:
                     "--benchmark-runs",
                     str(config.backend_benchmark_runs),
                 ]
+            )
+            + (
+                ["--cuda-graph"] if config.backend_cuda_graph else []
             ),
             cwd=str(BACKEND_DIR),
             env=env,

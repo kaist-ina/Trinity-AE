@@ -38,6 +38,8 @@ class OptimizeConfig:
     backend_local_refine_top_k: int = 1
     backend_warmup_runs: int = 3
     backend_benchmark_runs: int = 20
+    backend_cuda_graph: bool = False
+    shape_vars: Optional[dict] = None  # {pytorch_name: [sym, sym, ...]} for axis naming
 
     @property
     def output_path(self) -> Path:

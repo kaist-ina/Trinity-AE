@@ -40,6 +40,7 @@ class FrontendStage:
                 remove_short_loop_threshold=config.remove_short_loop_threshold,
                 decompose_nested_op_ratio=config.decompose_nested_op_ratio,
                 flat_output=True,
+                shape_vars=config.shape_vars,
             )
 
         artifacts = self._load_from_workspace(workspace)
