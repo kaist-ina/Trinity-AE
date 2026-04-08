@@ -46,7 +46,6 @@ class SingleKernelPipeline:
         accumulators = self.gen.analyzer.identify_accumulators(ast)
 
         fp32_tensors = self.gen.analyzer.identify_fp32_tensors(ast)
-        fp32_tensors.update(getattr(self.state, "global_fp32_tensors", set()))
         self.state.fp32_tensors = fp32_tensors
         self.state.exp_tensors = fp32_tensors
 

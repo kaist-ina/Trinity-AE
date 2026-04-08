@@ -20,8 +20,6 @@ class AllocationPlanner:
             sloop_intermediate_tensors = self.identify_sloop_intermediate_tensors(ast)
             cross_sloop_memory_tensors = self.identify_cross_sloop_memory_tensors(ast)
             fp32_tensors = self.identify_fp32_tensors(ast)
-            fp32_tensors.update(getattr(self.state, "global_fp32_tensors", set()))
-            fp32_tensors.update(getattr(self.state, "fp32_tensors", set()))
 
             non_cross_sloop_accumulators = accumulators - cross_sloop_tensors
             cross_sloop_memory_tensors -= non_cross_sloop_accumulators
@@ -33,7 +31,6 @@ class AllocationPlanner:
                 or not self.state.cross_sloop_memory_tensors
             ):
                 self.state.cross_sloop_memory_tensors = cross_sloop_memory_tensors
-            self.state.fp32_tensors = fp32_tensors
 
         local_intermediates = (
             self.state.intermediate_tensors
