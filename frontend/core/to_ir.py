@@ -107,7 +107,12 @@ def ast_to_lisp(node, level=0, role_map=None):
         return f"(elem {clean_name})"
 
     elif isinstance(node, T.Const):
-        return f"{prefix}{node.value}"
+        v = node.value
+        # Emit whole-number floats as integers so the Rust optimizer
+        # parses them as Num(i32) rather than Var(Symbol).
+        if isinstance(v, float) and v.is_integer():
+            v = int(v)
+        return f"{prefix}{v}"
     # 3. Arithmetic & Logic (Prefix Notation)
     # Binary Ops mapping
     op_symbol = None

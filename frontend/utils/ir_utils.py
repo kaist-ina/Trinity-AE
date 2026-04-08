@@ -249,12 +249,35 @@ def analyze_axis_access_patterns(primfunc: T.PrimFunc) -> dict[str, dict[str, se
     visit(primfunc.root_node)
     return patterns
 
-def normalize_main_func_axes(main_func: T.MainFunc) -> T.MainFunc:
+def normalize_main_func_axes(
+    main_func: T.MainFunc,
+    ir_shape_vars: dict[str, list[str]] | None = None,
+) -> T.MainFunc:
     """
     Normalize loop vars across calls based on axis access patterns.
     Shape exprs are resolved recursively to their earliest source tensor.
     PrimFunc tensors should already be bound to call tensors.
+
+    If *ir_shape_vars* is provided (mapping IR tensor name -> list of
+    symbolic dimension names), those symbols take priority when deciding
+    which axes share a loop variable.
     """
+    # Build (tensor, dim) -> symbol lookup from user-provided shape_vars.
+    _symbol_map: dict[tuple[str, int], str] = {}
+    if ir_shape_vars:
+        for tensor_name, symbols in ir_shape_vars.items():
+            for dim, sym in enumerate(symbols):
+                _symbol_map[(tensor_name, dim)] = sym
+
+    def _resolve_axis_symbol(access: dict[str, set[int]]) -> str | None:
+        """Look up the symbolic dim name for an axis via its tensor accesses."""
+        for tensor, dims in access.items():
+            for dim in dims:
+                sym = _symbol_map.get((tensor, dim))
+                if sym is not None:
+                    return sym
+        return None
+
     canonical_groups: list[dict[str, object]] = []
     axis_pool = list("ijklmnopqrstuvwxyz")
     axis_index = 0
@@ -450,6 +473,55 @@ def normalize_main_func_axes(main_func: T.MainFunc) -> T.MainFunc:
             axis_range = range_map.get(axis_key, (None, None))
             axis_tile = tile_map.get(axis_key)
             axis_outer_count = 1 if outermost_axis == axis_key else 0
+
+            # --- Symbol-based matching (from user shape_vars) ---
+            axis_symbol = _resolve_axis_symbol(access) if _symbol_map else None
+
+            if axis_symbol is not None:
+                # Find existing group with the same symbol
+                matched_idx = None
+                for idx, group in enumerate(canonical_groups):
+                    if group.get("symbol") == axis_symbol:
+                        matched_idx = idx
+                        break
+
+                if matched_idx is not None:
+                    group = canonical_groups[matched_idx]
+                    rename_map[axis] = group["name"]
+                    if axis_key != axis:
+                        rename_map[axis_key] = group["name"]
+                    group["outer_count"] = group.get("outer_count", 0) + axis_outer_count
+                    for tensor, dims in access.items():
+                        if tensor not in group["access"]:
+                            group["access"][tensor] = set(dims)
+                    group["ranges"].add(axis_range)
+                    group["tiles"].add(axis_tile)
+                else:
+                    # Create new group tagged with this symbol
+                    name = axis_symbol.lower()
+                    # Ensure uniqueness against existing names
+                    existing_names = {g["name"] for g in canonical_groups}
+                    if name in existing_names:
+                        suffix = 1
+                        while f"{name}{suffix}" in existing_names:
+                            suffix += 1
+                        name = f"{name}{suffix}"
+                    canonical_groups.append(
+                        {
+                            "name": name,
+                            "symbol": axis_symbol,
+                            "access": {k: set(v) for k, v in access.items()},
+                            "ranges": {axis_range},
+                            "tiles": {axis_tile},
+                            "outer_count": axis_outer_count,
+                        }
+                    )
+                    rename_map[axis] = name
+                    if axis_key != axis:
+                        rename_map[axis_key] = name
+                continue
+
+            # --- Heuristic matching (no symbol available) ---
             scored_candidates: list[
                 tuple[int, str, int, int, tuple[Optional[int], Optional[int]], Optional[str], dict[str, set[int]]]
             ] = []
@@ -484,6 +556,10 @@ def normalize_main_func_axes(main_func: T.MainFunc) -> T.MainFunc:
                     best_idx = idx
 
             if best_idx is None:
+                # Skip names already claimed by symbol-based groups.
+                existing_names = {g["name"] for g in canonical_groups}
+                while axis_index < len(axis_pool) and axis_pool[axis_index] in existing_names:
+                    axis_index += 1
                 name = axis_pool[axis_index] if axis_index < len(axis_pool) else f"a{axis_index}"
                 axis_index += 1
                 canonical_groups.append(

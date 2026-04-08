@@ -34,6 +34,7 @@ def export_model_ir(
     remove_short_loop_threshold: int = 64,
     decompose_nested_op_ratio: float = 0.3,
     flat_output: bool = False,
+    shape_vars: dict | None = None,
 ) -> tuple[T.MainFunc, list[str]]:
     """
     Convert a PyTorch model to Trinity IR and save artifacts under output_dir.
@@ -50,8 +51,20 @@ def export_model_ir(
         if context is None:
             context = inferred
 
-    relax_mod, user_output_count = to_relax(model, example_inputs)
+    relax_mod, user_output_count, param_name_map = to_relax(model, example_inputs)
     tir_mod = to_tir(relax_mod)
+
+    # Translate user-provided shape_vars (PyTorch names) to IR names
+    ir_shape_vars: dict[str, list[str]] | None = None
+    if shape_vars:
+        ir_shape_vars = {}
+        for pytorch_name, symbols in shape_vars.items():
+            ir_name = param_name_map.get(pytorch_name)
+            if ir_name is not None:
+                ir_shape_vars[ir_name] = symbols
+            else:
+                # Try as-is (user might already be using IR names)
+                ir_shape_vars[pytorch_name] = symbols
 
     os.makedirs(f"{output_dir}/tvm", exist_ok=True)
     os.makedirs(f"{output_dir}/trinity", exist_ok=True)
@@ -70,7 +83,7 @@ def export_model_ir(
     main_func_ir = build_main_func(tir_mod, primfunc_nodes, user_output_count=user_output_count)
     main_func_ir = sequentialize_main_func(main_func_ir)
     main_func_ir = bind_main_func_calls(main_func_ir)
-    main_func_ir = normalize_main_func_axes(main_func_ir)
+    main_func_ir = normalize_main_func_axes(main_func_ir, ir_shape_vars=ir_shape_vars)
     main_func_ir = simplify_redundant_shape_ops(main_func_ir)
     main_func_ir = filter_identity_and_apply_alias(main_func_ir)
     if inline_shape_op:

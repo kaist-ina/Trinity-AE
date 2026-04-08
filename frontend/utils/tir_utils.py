@@ -54,6 +54,46 @@ def _patch_relax_block_builder():
     block_builder_cls._trinity_patch_applied = True
 
 
+def _build_param_first_use_order(exported):
+    """Return list of (pytorch_name, shape) in the order constants are
+    first *used* in the graph — this matches the order build_main_func
+    will assign const_1, const_2, …"""
+    from torch.export.graph_signature import InputKind
+
+    # Map placeholder arg name → (pytorch_name, shape)
+    placeholder_info: dict[str, tuple[str, list[int]]] = {}
+    user_input_names: set[str] = set()
+    for spec in exported.graph_signature.input_specs:
+        if spec.kind == InputKind.USER_INPUT:
+            user_input_names.add(spec.arg.name)
+        elif spec.target is not None:
+            # Get shape from the placeholder's fake tensor
+            param = None
+            if hasattr(exported, "state_dict"):
+                param = exported.state_dict.get(spec.target)
+            if param is None and hasattr(exported, "constants"):
+                param = exported.constants.get(spec.target)
+            shape = list(param.shape) if param is not None else []
+            placeholder_info[spec.arg.name] = (spec.target, shape)
+
+    # Walk graph ops to find first-use order of constant placeholders
+    seen: set[str] = set()
+    ordered: list[tuple[str, list[int]]] = []
+    for node in exported.graph_module.graph.nodes:
+        if node.op == "placeholder":
+            continue
+        for inp in node.all_input_nodes:
+            if inp.op == "placeholder" and inp.name in placeholder_info and inp.name not in seen:
+                seen.add(inp.name)
+                ordered.append(placeholder_info[inp.name])
+    # Append any remaining placeholders not referenced in ops
+    for arg_name, info in placeholder_info.items():
+        if arg_name not in seen:
+            ordered.append(info)
+
+    return ordered, user_input_names
+
+
 def to_relax(model, example_input):
     """PyTorch 모델을 Relax IR로 변환"""
     _patch_relax_block_builder()
@@ -64,7 +104,19 @@ def to_relax(model, example_input):
             example_input = (example_input,)
         exported = export(model, example_input)
     user_output_count = len(getattr(exported.graph_signature, "user_outputs", []) or [])
-    return from_exported_program(exported, keep_params_as_input=True), user_output_count
+
+    # Build mapping: pytorch parameter name → IR const_N name
+    param_order, user_input_names = _build_param_first_use_order(exported)
+    param_name_map: dict[str, str] = {}
+    for idx, (pytorch_name, _shape) in enumerate(param_order):
+        param_name_map[pytorch_name] = f"const_{idx + 1}"
+    # Map user inputs (keep their name as-is)
+    for spec in exported.graph_signature.input_specs:
+        if spec.arg.name in user_input_names:
+            param_name_map[spec.arg.name] = spec.arg.name
+
+    relax_mod = from_exported_program(exported, keep_params_as_input=True)
+    return relax_mod, user_output_count, param_name_map
 
 def to_tir(relax_mod):
     """Relax IR을 TIR로 lowering"""
