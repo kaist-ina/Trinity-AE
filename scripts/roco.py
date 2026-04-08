@@ -9,85 +9,90 @@ sys.path.insert(0, str(PROJECT_ROOT / "frontend"))
 
 
 
-class RocoAttnWithStats(nn.Module):
-    def __init__(self, M, H, D, P, cache_K, cache_V, device=None, dtype=None):
+class Roco(nn.Module):
+    def __init__(self, M, N, D, P, cache_K, cache_V, W_q=None, W_k=None, W_v=None, device=None, dtype=None):
         super().__init__()
         self.M = M
-        self.H = H
+        self.N = N
         self.D = D
         self.P = P
-        self.N = H * D
+        self.H = N // D
         self.device = device
         self.dtype = dtype
 
-        self.q_proj = nn.Linear(self.N, self.N, bias=False)
-        self.k_proj = nn.Linear(self.N, self.N, bias=False)
-        self.v_proj = nn.Linear(self.N, self.N, bias=False)
+        # self.q_proj = nn.Linear(N, N, bias=False)
+        # self.k_proj = nn.Linear(N, N, bias=False)
+        # self.v_proj = nn.Linear(N, N, bias=False)
 
-        self.register_buffer("cache_K", cache_K.to(device))
-        self.register_buffer("cache_V", cache_V.to(device))
+        self.q_proj = torch.randn(N, N, device=device, dtype=dtype)
+        self.k_proj = torch.randn(N, N, device=device, dtype=dtype)
+        self.v_proj = torch.randn(N, N, device=device, dtype=dtype)
 
+        # cache는 buffer로 등록
+        self.register_buffer('cache_K', cache_K.to(device))
+        self.register_buffer('cache_V', cache_V.to(device))
+    
     def forward(self, X):
-        q1 = self.q_proj(X)
-        k1 = self.k_proj(X)
-        v1 = self.v_proj(X)
+        # X shape: (M, N) where M=16 (seq), N=4096 (hidden)
+        # Project Q, K, V separately
+        # q = self.q_proj(X)
+        # k = self.k_proj(X)
+        # v = self.v_proj(X)
+        q = torch.matmul(X, self.q_proj)
+        k = torch.matmul(X, self.k_proj)
+        v = torch.matmul(X, self.v_proj)
 
-        q2 = q1.view(self.M, self.H, self.D)
-        k2 = k1.view(self.M, self.H, self.D)
-        v2 = v1.view(self.M, self.H, self.D)
+    
+        # Reshape to multi-head
+        q = q.view(self.M, self.H, self.D)  # (M, H, D)
+        k = k.view(self.M, self.H, self.D)  # (M, H, D)
+        v = v.view(self.M, self.H, self.D)  # (M, H, D)
 
-        q = q2.permute(1, 0, 2)
-        k = k2.permute(1, 0, 2)
-        v = v2.permute(1, 0, 2)
+        # Transpose to (H, M, D) for cache update
+        q = q.transpose(0, 1)  # (H, M, D)
+        k = k.transpose(0, 1)  # (H, M, D)
+        v = v.transpose(0, 1)  # (H, M, D)
 
-        end = self.cache_K.size(1)
-        start = end - k.size(1)
-        self.cache_K[:, start:end, :] = k
-        self.cache_V[:, start:end, :] = v
+        # Update cache - using slicing to avoid in-place operation issues
+        # cache_K_new = self.cache_K.clone()
+        # cache_V_new = self.cache_V.clone()
+        self.cache_K[:, self.P:self.P+self.M, :] = k
+        self.cache_V[:, self.P:self.P+self.M, :] = v
+        cache_K_new = self.cache_K
+        cache_V_new = self.cache_V
 
-        c = torch.matmul(q, self.cache_K.permute(0, 2, 1))
-        c_exp = torch.exp(c)
-        c_sum = c_exp.sum(dim=2)
-        c_div = c_exp / c_sum.unsqueeze(-1)
+        # Transpose q to (H, M, D)
 
-        o = torch.matmul(c_div, self.cache_V)
-        c_out1 = c_div.sum(dim=1)
-        c_out2 = (c_div * c_div).sum(dim=1)
+        # Attention scores: (H, M, D) @ (H, D, P+M) -> (H, M, P+M)
+        scores = torch.matmul(q, cache_K_new.transpose(1, 2))
+        
+        # Softmax - using torch.softmax for TVM compatibility
+        # weights = torch.softmax(scores, dim=-1)
+        scores_exp = torch.exp(scores)
+        scores_sum = torch.sum(scores_exp, dim=-1, keepdim=True)
+        weights = scores_exp / scores_sum
+        
+        # Apply attention: (H, M, P+M) @ (H, P+M, D) -> (H, M, D)
+        output = torch.matmul(weights, cache_V_new)
+        c_out1 = torch.sum(weights, dim=1, keepdim=True)
+        c_out2 = torch.sum(weights*weights, dim=1, keepdim=True)
+        
+        # Transpose back and reshape: (H, M, D) -> (M, H, D) -> (M, N)
+        output = output.transpose(0, 1)  # (M, H, D)
+        output = output.contiguous().view(self.M, self.H * self.D)
 
-        o1 = o.permute(1, 0, 2)
-        o2 = o1.contiguous().view(self.M, self.N)
-        return o2, c_out1, c_out2
 
-
-def build_model_and_inputs():
-    device = torch.device("cpu")
-    dtype = torch.float32
-
-    M = 16
-    H = 32
-    D = 128
-    P = 1040
-
-    N = H * D
-    X = torch.randn((M, N), device=device, dtype=dtype)
-    K_cache = torch.randn((H, P, D), device=device, dtype=dtype)
-    V_cache = torch.randn((H, P, D), device=device, dtype=dtype)
-
-    model = RocoAttnWithStats(M, H, D, P, K_cache, V_cache, device=device, dtype=dtype)
-
-    print("Model created. Converting to Relax IR...")
-    example_inputs = X
-    return {
-        "model": model,
-        "example_inputs": example_inputs,
-        "inline_shape_op": True,
-        "inline_elementwise_op": True,
-        "remove_short_loop_threshold": 24,
-        "decompose_nested_op_ratio": 0.0,
-    }
-
+        return output, c_out1, c_out2
 
 if __name__ == "__main__":
     import trinity
-    cfg = build_model_and_inputs()
-    result = trinity.optimize(cfg["model"], cfg["example_inputs"], basename="roco")
+
+    M, N, D, H, P = 16, 4096, 128, 32, 1008
+
+    X = torch.randn((M, N))
+    K_cache = torch.randn((H, P + M, D))
+    V_cache = torch.randn((H, P + M, D))
+
+    model = Roco(M, N, D, P, K_cache, V_cache)
+    result = trinity.optimize(model, X, basename="roco", skip_frontend=True, verbose=True)
+

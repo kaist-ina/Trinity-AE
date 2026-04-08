@@ -48,6 +48,7 @@ class Vanilla(nn.Module):
         v = v.view(self.M, self.H, self.D)  # (M, H, D)
 
         # Transpose to (H, M, D) for cache update
+        q = q.transpose(0, 1)  # (H, M, D)
         k = k.transpose(0, 1)  # (H, M, D)
         v = v.transpose(0, 1)  # (H, M, D)
 
@@ -60,7 +61,6 @@ class Vanilla(nn.Module):
         cache_V_new = self.cache_V
 
         # Transpose q to (H, M, D)
-        q = q.transpose(0, 1)  # (H, M, D)
 
         # Attention scores: (H, M, D) @ (H, D, P+M) -> (H, M, P+M)
         scores = torch.matmul(q, cache_K_new.transpose(1, 2))

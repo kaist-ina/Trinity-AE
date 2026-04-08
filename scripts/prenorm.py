@@ -52,6 +52,7 @@ class PreNormAttn(nn.Module):
         v = v.view(self.M, self.H, self.D)  # (M, H, D)
 
         # Transpose to (H, M, D) for cache update
+        q = q.transpose(0, 1)  # (H, M, D)
         k = k.transpose(0, 1)  # (H, M, D)
         v = v.transpose(0, 1)  # (H, M, D)
 
@@ -64,7 +65,6 @@ class PreNormAttn(nn.Module):
         cache_V_new = self.cache_V
 
         # Transpose q to (H, M, D)
-        q = q.transpose(0, 1)  # (H, M, D)
 
         # Attention scores: (H, M, D) @ (H, D, P+M) -> (H, M, P+M)
         scores = torch.matmul(q, cache_K_new.transpose(1, 2))
@@ -96,4 +96,10 @@ if __name__ == "__main__":
     V_cache = torch.randn((H, P+M, D))
 
     model = PreNormAttn(M, H, D, P, K_cache, V_cache)
-    result = trinity.optimize(model, X, basename="prenorm", verbose=True, skip_frontend=True)
+    result = trinity.optimize(model, X, basename="prenorm", verbose=True, skip_frontend=False,
+        shape_vars={
+            "x":       ["M", "K"],
+            "q_proj":  ["K", "N"],
+            "k_proj":  ["K", "N"],
+            "v_proj":  ["K", "N"],
+        })
