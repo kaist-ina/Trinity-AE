@@ -57,6 +57,7 @@ class IRBenchmark:
         shapes_path: str,
         warmup_runs: int = 10,
         benchmark_runs: int = 100,
+        use_cuda_graph: bool = False,
     ):
         """Initialize benchmark with shapes.json."""
         self.tensor_types: Dict[str, str] = {}
@@ -64,6 +65,7 @@ class IRBenchmark:
         self.shapes_path = shapes_path
         self.warmup_runs = warmup_runs
         self.benchmark_runs = benchmark_runs
+        self.use_cuda_graph = use_cuda_graph
 
         # Setup device
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -663,24 +665,32 @@ class IRBenchmark:
                     kernel_fn(*args)
             stream.synchronize()
 
-            # CUDA Graph Warmup
-            graph = torch.cuda.CUDAGraph()
-            with torch.cuda.stream(stream):
-                with torch.cuda.graph(graph, stream=stream):
-                    kernel_fn(*args)
-            # Synchronize before timing
-            stream.synchronize()
-            
             # Benchmark runs
             start_event = torch.cuda.Event(enable_timing=True)
             end_event = torch.cuda.Event(enable_timing=True)
 
-            with torch.cuda.stream(stream):
-                start_event.record()
-                for _ in range(benchmark_runs):
-                    graph.replay()
-                end_event.record()
-            stream.synchronize()
+            if self.use_cuda_graph:
+                # CUDA Graph capture and replay
+                graph = torch.cuda.CUDAGraph()
+                with torch.cuda.stream(stream):
+                    with torch.cuda.graph(graph, stream=stream):
+                        kernel_fn(*args)
+                stream.synchronize()
+
+                with torch.cuda.stream(stream):
+                    start_event.record()
+                    for _ in range(benchmark_runs):
+                        graph.replay()
+                    end_event.record()
+                stream.synchronize()
+            else:
+                # Direct kernel invocation
+                with torch.cuda.stream(stream):
+                    start_event.record()
+                    for _ in range(benchmark_runs):
+                        kernel_fn(*args)
+                    end_event.record()
+                stream.synchronize()
             
             # Return average time in milliseconds
             avg_time = (start_event.elapsed_time(end_event)) / benchmark_runs
@@ -868,6 +878,7 @@ def run_comprehensive_benchmark(
     local_refine_top_k=1,
     warmup_runs=10,
     benchmark_runs=100,
+    use_cuda_graph=False,
 ):
     """Run benchmarks for shapes.json."""
     all_results = []
@@ -889,6 +900,7 @@ def run_comprehensive_benchmark(
         shapes_path=shapes_path,
         warmup_runs=warmup_runs,
         benchmark_runs=benchmark_runs,
+        use_cuda_graph=use_cuda_graph,
     )
     benchmark_instances.append(benchmark)
     
@@ -1021,7 +1033,8 @@ def main():
     parser.add_argument('--local-refine-budget', type=int, default=16, help="Extra benchmarks for nearest neighbors of the best representatives")
     parser.add_argument('--local-refine-top-k', type=int, default=1, help="How many top representatives to use as local refinement anchors")
     parser.add_argument('--warmup-runs', type=int, default=10, help="Number of warmup runs before measurement")
-    parser.add_argument('--benchmark-runs', type=int, default=100, help="Number of timed graph replays per IR")
+    parser.add_argument('--benchmark-runs', type=int, default=100, help="Number of timed runs per IR")
+    parser.add_argument('--cuda-graph', action='store_true', help="Use CUDA graph capture/replay for benchmarking")
 
     args = parser.parse_args()
     
@@ -1061,6 +1074,7 @@ def main():
         local_refine_top_k=args.local_refine_top_k,
         warmup_runs=args.warmup_runs,
         benchmark_runs=args.benchmark_runs,
+        use_cuda_graph=args.cuda_graph,
     )
     
     print(f"\nAll results saved to: {args.output}")
