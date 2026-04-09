@@ -2,53 +2,78 @@
 MainFunc
 - Inputs
   x: shape=(16, 4096), dtype=float32
-  p_q_proj_weight: shape=(4096, 4096), dtype=float32
-  p_k_proj_weight: shape=(4096, 4096), dtype=float32
-  p_v_proj_weight: shape=(4096, 4096), dtype=float32
-  const_1: shape=(32, 1024, 128), dtype=float32
-  const_2: shape=(32, 1024, 128), dtype=float32
-  const_3: shape=(32, 16, 1024), dtype=float32
+  const_1: shape=(4096, 4096), dtype=float32
+  const_2: shape=(4096, 4096), dtype=float32
+  const_3: shape=(4096, 4096), dtype=float32
+  const_4: shape=(32, 1024, 128), dtype=float32
+  const_5: shape=(32, 1024, 128), dtype=float32
+  const_6: shape=(32, 16, 1024), dtype=float32
 - Outputs
-  lv33: shape=(16, 4096), dtype=float32
-  lv28: shape=(32, 1024), dtype=float32
+  lv38: shape=(16, 4096), dtype=float32
+  lv36: shape=(32, 1024), dtype=float32
 - Intermediate Tensors
+  lv: shape=(16, 4096), dtype=float32
   lv1: shape=(16, 4096), dtype=float32
-  lv3: shape=(16, 4096), dtype=float32
-  lv5: shape=(16, 4096), dtype=float32
-  lv6: shape=(16, 32, 128), dtype=float32
-  lv7: shape=(16, 32, 128), dtype=float32
-  lv8: shape=(16, 32, 128), dtype=float32
-  lv9: shape=(32, 16, 128), dtype=float32
-  lv10: shape=(32, 16, 128), dtype=float32
-  lv11: shape=(32, 16, 128), dtype=float32
-  lv14: shape=(32, 128, 1024), dtype=float32
-  lv17: shape=(32, 16, 1024), dtype=float32
-  lv20: shape=(32, 16, 1024), dtype=float32
-  lv21: shape=(32, 16, 1024), dtype=float32
-  lv22: shape=(32, 16), dtype=float32
-  lv23: shape=(32, 16), dtype=float32
-  lv25: shape=(32, 16, 1024), dtype=float32
+  lv2: shape=(16, 4096), dtype=float32
+  lv3: shape=(16, 32, 128), dtype=float32
+  lv4: shape=(16, 32, 128), dtype=float32
+  lv5: shape=(16, 32, 128), dtype=float32
+  lv6: shape=(32, 16, 128), dtype=float32
+  lv7: shape=(32, 16, 128), dtype=float32
+  lv8: shape=(32, 16, 128), dtype=float32
+  lv24: shape=(32, 16, 1024), dtype=float32
   lv27: shape=(32, 16, 1024), dtype=float32
-  lv31: shape=(32, 16, 128), dtype=float32
-  lv32: shape=(16, 32, 128), dtype=float32
+  lv28: shape=(32, 16, 1024), dtype=float32
+  lv29: shape=(32, 16), dtype=float32
+  lv30: shape=(32, 16), dtype=float32
+  lv31: shape=(32, 16, 1024), dtype=float32
+  lv34: shape=(32, 16, 128), dtype=float32
+  lv35: shape=(32, 16, 1024), dtype=float32
+  lv37: shape=(16, 32, 128), dtype=float32
 - Calls
   ============================================================
-  - matmul (call 1): out=lv1: shape=(16, 4096), dtype=float32, inputs=[x: shape=(16, 4096), dtype=float32, p_q_proj_weight: shape=(4096, 4096), dtype=float32]
+  - matmul (call 1): out=lv: shape=(16, 4096), dtype=float32, inputs=[x: shape=(16, 4096), dtype=float32, const_1: shape=(4096, 4096), dtype=float32]
   ============================================================
     PrimFunc: matmul
     
     - Input Tensors
       x: shape=(16, 4096), dtype=float32
-      p_q_proj_weight: shape=(4096, 4096), dtype=float32
+      const_1: shape=(4096, 4096), dtype=float32
+    
+    - Output Tensor
+      lv: shape=(16, 4096), dtype=float32
+    
+    - Root Node (Lisp)
+    (loop 0 4096 tile_j j
+      (loop 0 4096 tile_k k
+        (store (tensor lv)
+          (+ (* (load (tensor lv) (index fulltile (tile j))) 1) (@ (load (input x) (index fulltile (tile k))) (load (input const_1) (index (tile k) (tile j)))))
+          (index fulltile (tile j))
+        )
+      )
+    )
+
+
+
+
+
+  ============================================================
+  - matmul (call 2): out=lv1: shape=(16, 4096), dtype=float32, inputs=[x: shape=(16, 4096), dtype=float32, const_2: shape=(4096, 4096), dtype=float32]
+  ============================================================
+    PrimFunc: matmul
+    
+    - Input Tensors
+      x: shape=(16, 4096), dtype=float32
+      const_2: shape=(4096, 4096), dtype=float32
     
     - Output Tensor
       lv1: shape=(16, 4096), dtype=float32
     
     - Root Node (Lisp)
     (loop 0 4096 tile_j j
-      (loop 0 4096 tile_i i
+      (loop 0 4096 tile_k k
         (store (tensor lv1)
-          (+ (* (load (tensor lv1) (index fulltile (tile j))) 1) (@ (load (input x) (index fulltile (tile i))) (transpose (load (input p_q_proj_weight) (index (tile j) (tile i))))))
+          (+ (* (load (tensor lv1) (index fulltile (tile j))) 1) (@ (load (input x) (index fulltile (tile k))) (load (input const_2) (index (tile k) (tile j)))))
           (index fulltile (tile j))
         )
       )
@@ -59,22 +84,22 @@ MainFunc
 
 
   ============================================================
-  - matmul (call 2): out=lv3: shape=(16, 4096), dtype=float32, inputs=[x: shape=(16, 4096), dtype=float32, p_k_proj_weight: shape=(4096, 4096), dtype=float32]
+  - matmul (call 3): out=lv2: shape=(16, 4096), dtype=float32, inputs=[x: shape=(16, 4096), dtype=float32, const_3: shape=(4096, 4096), dtype=float32]
   ============================================================
     PrimFunc: matmul
     
     - Input Tensors
       x: shape=(16, 4096), dtype=float32
-      p_k_proj_weight: shape=(4096, 4096), dtype=float32
+      const_3: shape=(4096, 4096), dtype=float32
     
     - Output Tensor
-      lv3: shape=(16, 4096), dtype=float32
+      lv2: shape=(16, 4096), dtype=float32
     
     - Root Node (Lisp)
     (loop 0 4096 tile_j j
-      (loop 0 4096 tile_i i
-        (store (tensor lv3)
-          (+ (* (load (tensor lv3) (index fulltile (tile j))) 1) (@ (load (input x) (index fulltile (tile i))) (transpose (load (input p_k_proj_weight) (index (tile j) (tile i))))))
+      (loop 0 4096 tile_k k
+        (store (tensor lv2)
+          (+ (* (load (tensor lv2) (index fulltile (tile j))) 1) (@ (load (input x) (index fulltile (tile k))) (load (input const_3) (index (tile k) (tile j)))))
           (index fulltile (tile j))
         )
       )
@@ -85,24 +110,21 @@ MainFunc
 
 
   ============================================================
-  - matmul (call 3): out=lv5: shape=(16, 4096), dtype=float32, inputs=[x: shape=(16, 4096), dtype=float32, p_v_proj_weight: shape=(4096, 4096), dtype=float32]
+  - reshape (call 1): out=lv3: shape=(16, 32, 128), dtype=float32, inputs=[lv: shape=(16, 4096), dtype=float32]
   ============================================================
-    PrimFunc: matmul
+    PrimFunc: reshape
     
     - Input Tensors
-      x: shape=(16, 4096), dtype=float32
-      p_v_proj_weight: shape=(4096, 4096), dtype=float32
+      lv: shape=(16, 4096), dtype=float32
     
     - Output Tensor
-      lv5: shape=(16, 4096), dtype=float32
+      lv3: shape=(16, 32, 128), dtype=float32
     
     - Root Node (Lisp)
-    (loop 0 4096 tile_j j
-      (loop 0 4096 tile_i i
-        (store (tensor lv5)
-          (+ (* (load (tensor lv5) (index fulltile (tile j))) 1) (@ (load (input x) (index fulltile (tile i))) (transpose (load (input p_v_proj_weight) (index (tile j) (tile i))))))
-          (index fulltile (tile j))
-        )
+    (loop 0 4096 128 j
+      (store (tensor lv3)
+        (unsqueeze (load (tensor lv) (index fulltile (tile j))) 1)
+        (index fulltile (elem j) fulltile)
       )
     )
 
@@ -111,7 +133,7 @@ MainFunc
 
 
   ============================================================
-  - reshape (call 1): out=lv6: shape=(16, 32, 128), dtype=float32, inputs=[lv1: shape=(16, 4096), dtype=float32]
+  - reshape (call 2): out=lv4: shape=(16, 32, 128), dtype=float32, inputs=[lv1: shape=(16, 4096), dtype=float32]
   ============================================================
     PrimFunc: reshape
     
@@ -119,11 +141,11 @@ MainFunc
       lv1: shape=(16, 4096), dtype=float32
     
     - Output Tensor
-      lv6: shape=(16, 32, 128), dtype=float32
+      lv4: shape=(16, 32, 128), dtype=float32
     
     - Root Node (Lisp)
     (loop 0 4096 128 j
-      (store (tensor lv6)
+      (store (tensor lv4)
         (unsqueeze (load (tensor lv1) (index fulltile (tile j))) 1)
         (index fulltile (elem j) fulltile)
       )
@@ -134,21 +156,67 @@ MainFunc
 
 
   ============================================================
-  - reshape (call 2): out=lv7: shape=(16, 32, 128), dtype=float32, inputs=[lv3: shape=(16, 4096), dtype=float32]
+  - reshape (call 3): out=lv5: shape=(16, 32, 128), dtype=float32, inputs=[lv2: shape=(16, 4096), dtype=float32]
   ============================================================
     PrimFunc: reshape
     
     - Input Tensors
-      lv3: shape=(16, 4096), dtype=float32
+      lv2: shape=(16, 4096), dtype=float32
     
     - Output Tensor
-      lv7: shape=(16, 32, 128), dtype=float32
+      lv5: shape=(16, 32, 128), dtype=float32
     
     - Root Node (Lisp)
     (loop 0 4096 128 j
+      (store (tensor lv5)
+        (unsqueeze (load (tensor lv2) (index fulltile (tile j))) 1)
+        (index fulltile (elem j) fulltile)
+      )
+    )
+
+
+
+
+
+  ============================================================
+  - transpose (call 1): out=lv6: shape=(32, 16, 128), dtype=float32, inputs=[lv3: shape=(16, 32, 128), dtype=float32]
+  ============================================================
+    PrimFunc: transpose
+    
+    - Input Tensors
+      lv3: shape=(16, 32, 128), dtype=float32
+    
+    - Output Tensor
+      lv6: shape=(32, 16, 128), dtype=float32
+    
+    - Root Node (Lisp)
+    (loop 0 32 tile_l l
+      (store (tensor lv6)
+        (permute3 (load (tensor lv3) (index fulltile (tile l) fulltile)) 1 0 2)
+        (index (tile l) fulltile fulltile)
+      )
+    )
+
+
+
+
+
+  ============================================================
+  - transpose (call 2): out=lv7: shape=(32, 16, 128), dtype=float32, inputs=[lv4: shape=(16, 32, 128), dtype=float32]
+  ============================================================
+    PrimFunc: transpose
+    
+    - Input Tensors
+      lv4: shape=(16, 32, 128), dtype=float32
+    
+    - Output Tensor
+      lv7: shape=(32, 16, 128), dtype=float32
+    
+    - Root Node (Lisp)
+    (loop 0 32 tile_l l
       (store (tensor lv7)
-        (unsqueeze (load (tensor lv3) (index fulltile (tile j))) 1)
-        (index fulltile (elem j) fulltile)
+        (permute3 (load (tensor lv4) (index fulltile (tile l) fulltile)) 1 0 2)
+        (index (tile l) fulltile fulltile)
       )
     )
 
@@ -157,43 +225,20 @@ MainFunc
 
 
   ============================================================
-  - reshape (call 3): out=lv8: shape=(16, 32, 128), dtype=float32, inputs=[lv5: shape=(16, 4096), dtype=float32]
+  - transpose (call 3): out=lv8: shape=(32, 16, 128), dtype=float32, inputs=[lv5: shape=(16, 32, 128), dtype=float32]
   ============================================================
-    PrimFunc: reshape
+    PrimFunc: transpose
     
     - Input Tensors
-      lv5: shape=(16, 4096), dtype=float32
+      lv5: shape=(16, 32, 128), dtype=float32
     
     - Output Tensor
-      lv8: shape=(16, 32, 128), dtype=float32
+      lv8: shape=(32, 16, 128), dtype=float32
     
     - Root Node (Lisp)
-    (loop 0 4096 128 j
+    (loop 0 32 tile_l l
       (store (tensor lv8)
-        (unsqueeze (load (tensor lv5) (index fulltile (tile j))) 1)
-        (index fulltile (elem j) fulltile)
-      )
-    )
-
-
-
-
-
-  ============================================================
-  - transpose1 (call 1): out=lv9: shape=(32, 16, 128), dtype=float32, inputs=[lv6: shape=(16, 32, 128), dtype=float32]
-  ============================================================
-    PrimFunc: transpose1
-    
-    - Input Tensors
-      lv6: shape=(16, 32, 128), dtype=float32
-    
-    - Output Tensor
-      lv9: shape=(32, 16, 128), dtype=float32
-    
-    - Root Node (Lisp)
-    (loop 0 32 tile_l l
-      (store (tensor lv9)
-        (permute3 (load (tensor lv6) (index fulltile (tile l) fulltile)) 1 0 2)
+        (permute3 (load (tensor lv5) (index fulltile (tile l) fulltile)) 1 0 2)
         (index (tile l) fulltile fulltile)
       )
     )
@@ -203,67 +248,20 @@ MainFunc
 
 
   ============================================================
-  - transpose1 (call 2): out=lv10: shape=(32, 16, 128), dtype=float32, inputs=[lv7: shape=(16, 32, 128), dtype=float32]
+  - slice_scatter1 (call 1): out=const_4: shape=(32, 1024, 128), dtype=float32, inputs=[lv7: shape=(32, 16, 128), dtype=float32]
   ============================================================
-    PrimFunc: transpose1
+    PrimFunc: slice_scatter1
     
     - Input Tensors
-      lv7: shape=(16, 32, 128), dtype=float32
+      lv7: shape=(32, 16, 128), dtype=float32
     
     - Output Tensor
-      lv10: shape=(32, 16, 128), dtype=float32
+      const_4: shape=(32, 1024, 128), dtype=float32
     
     - Root Node (Lisp)
     (loop 0 32 tile_l l
-      (store (tensor lv10)
-        (permute3 (load (tensor lv7) (index fulltile (tile l) fulltile)) 1 0 2)
-        (index (tile l) fulltile fulltile)
-      )
-    )
-
-
-
-
-
-  ============================================================
-  - transpose1 (call 3): out=lv11: shape=(32, 16, 128), dtype=float32, inputs=[lv8: shape=(16, 32, 128), dtype=float32]
-  ============================================================
-    PrimFunc: transpose1
-    
-    - Input Tensors
-      lv8: shape=(16, 32, 128), dtype=float32
-    
-    - Output Tensor
-      lv11: shape=(32, 16, 128), dtype=float32
-    
-    - Root Node (Lisp)
-    (loop 0 32 tile_l l
-      (store (tensor lv11)
-        (permute3 (load (tensor lv8) (index fulltile (tile l) fulltile)) 1 0 2)
-        (index (tile l) fulltile fulltile)
-      )
-    )
-
-
-
-
-
-  ============================================================
-  - concatenate (call 1): out=const_1: shape=(32, 1024, 128), dtype=float32, inputs=[const_1: shape=(32, 1008, 128), dtype=float32, lv10: shape=(32, 16, 128), dtype=float32]
-  ============================================================
-    PrimFunc: concatenate
-    
-    - Input Tensors
-      const_1: shape=(32, 1008, 128), dtype=float32
-      lv10: shape=(32, 16, 128), dtype=float32
-    
-    - Output Tensor
-      const_1: shape=(32, 1024, 128), dtype=float32
-    
-    - Root Node (Lisp)
-    (loop 0 32 tile_l l
-      (store (input const_1)
-        (load (tensor lv10) (index (tile l) fulltile fulltile))
+      (store (input const_4)
+        (load (tensor lv7) (index (tile l) fulltile fulltile))
         (index (tile l) (const_tile 1008 16) fulltile)
       )
     )
@@ -273,21 +271,20 @@ MainFunc
 
 
   ============================================================
-  - concatenate (call 2): out=const_2: shape=(32, 1024, 128), dtype=float32, inputs=[const_2: shape=(32, 1008, 128), dtype=float32, lv11: shape=(32, 16, 128), dtype=float32]
+  - slice_scatter1 (call 2): out=const_5: shape=(32, 1024, 128), dtype=float32, inputs=[lv8: shape=(32, 16, 128), dtype=float32]
   ============================================================
-    PrimFunc: concatenate
+    PrimFunc: slice_scatter1
     
     - Input Tensors
-      const_2: shape=(32, 1008, 128), dtype=float32
-      lv11: shape=(32, 16, 128), dtype=float32
+      lv8: shape=(32, 16, 128), dtype=float32
     
     - Output Tensor
-      const_2: shape=(32, 1024, 128), dtype=float32
+      const_5: shape=(32, 1024, 128), dtype=float32
     
     - Root Node (Lisp)
     (loop 0 32 tile_l l
-      (store (input const_2)
-        (load (tensor lv11) (index (tile l) fulltile fulltile))
+      (store (input const_5)
+        (load (tensor lv8) (index (tile l) fulltile fulltile))
         (index (tile l) (const_tile 1008 16) fulltile)
       )
     )
@@ -297,48 +294,23 @@ MainFunc
 
 
   ============================================================
-  - transpose2 (call 1): out=lv14: shape=(32, 128, 1024), dtype=float32, inputs=[const_1: shape=(32, 1024, 128), dtype=float32]
-  ============================================================
-    PrimFunc: transpose2
-    
-    - Input Tensors
-      const_1: shape=(32, 1024, 128), dtype=float32
-    
-    - Output Tensor
-      lv14: shape=(32, 128, 1024), dtype=float32
-    
-    - Root Node (Lisp)
-    (loop 0 32 tile_l l
-      (loop 0 1024 tile_n n
-        (store (tensor lv14)
-          (permute3 (load (input const_1) (index (tile l) (tile n) fulltile)) 0 2 1)
-          (index (tile l) fulltile (tile n))
-        )
-      )
-    )
-
-
-
-
-
-  ============================================================
-  - matmul1 (call 1): out=lv17: shape=(32, 16, 1024), dtype=float32, inputs=[lv9: shape=(32, 16, 128), dtype=float32, lv14: shape=(32, 128, 1024), dtype=float32]
+  - matmul1 (call 1): out=lv24: shape=(32, 16, 1024), dtype=float32, inputs=[lv6: shape=(32, 16, 128), dtype=float32, const_4: shape=(32, 1024, 128), dtype=float32]
   ============================================================
     PrimFunc: matmul1
     
     - Input Tensors
-      lv9: shape=(32, 16, 128), dtype=float32
-      lv14: shape=(32, 128, 1024), dtype=float32
+      lv6: shape=(32, 16, 128), dtype=float32
+      const_4: shape=(32, 1024, 128), dtype=float32
     
     - Output Tensor
-      lv17: shape=(32, 16, 1024), dtype=float32
+      lv24: shape=(32, 16, 1024), dtype=float32
     
     - Root Node (Lisp)
     (loop 0 32 tile_l l
-      (loop 0 1024 tile_n n
-        (store (tensor lv17)
-          (@ (load (tensor lv9) (index (tile l) fulltile fulltile)) (load (tensor lv14) (index (tile l) fulltile (tile n))))
-          (index (tile l) fulltile (tile n))
+      (loop 0 1024 tile_m m
+        (store (tensor lv24)
+          (@ (load (tensor lv6) (index (tile l) fulltile fulltile)) (permute3 (load (input const_4) (index (tile l) (tile m) fulltile)) 0 2 1))
+          (index (tile l) fulltile (tile m))
         )
       )
     )
@@ -348,150 +320,22 @@ MainFunc
 
 
   ============================================================
-  - tir_exp (call 1): out=lv20: shape=(32, 16, 1024), dtype=float32, inputs=[lv17: shape=(32, 16, 1024), dtype=float32]
+  - tir_exp (call 1): out=lv27: shape=(32, 16, 1024), dtype=float32, inputs=[lv24: shape=(32, 16, 1024), dtype=float32]
   ============================================================
     PrimFunc: tir_exp
     
     - Input Tensors
-      lv17: shape=(32, 16, 1024), dtype=float32
-    
-    - Output Tensor
-      lv20: shape=(32, 16, 1024), dtype=float32
-    
-    - Root Node (Lisp)
-    (loop 0 32 tile_l l
-      (loop 0 1024 tile_n n
-        (store (tensor lv20)
-          (exp (load (tensor lv17) (index (tile l) fulltile (tile n))))
-          (index (tile l) fulltile (tile n))
-        )
-      )
-    )
-
-
-
-
-
-  ============================================================
-  - tir_exp (call 2): out=lv21: shape=(32, 16, 1024), dtype=float32, inputs=[const_3: shape=(32, 16, 1024), dtype=float32, lv17: shape=(32, 16, 1024), dtype=float32]
-  ============================================================
-    PrimFunc: tir_exp
-    
-    - Input Tensors
-      const_3: shape=(32, 16, 1024), dtype=float32
-      lv17: shape=(32, 16, 1024), dtype=float32
-    
-    - Output Tensor
-      lv21: shape=(32, 16, 1024), dtype=float32
-    
-    - Root Node (Lisp)
-    (loop 0 32 tile_l l
-      (loop 0 1024 tile_n n
-        (store (tensor lv21)
-          (exp (/ (+ (load (tensor lv17) (index (tile l) fulltile (tile n))) (load (input const_3) (index (tile l) fulltile (tile n)))) 1.5))
-          (index (tile l) fulltile (tile n))
-        )
-      )
-    )
-
-
-
-
-
-  ============================================================
-  - sum (call 1): out=lv22: shape=(32, 16), dtype=float32, inputs=[lv20: shape=(32, 16, 1024), dtype=float32]
-  ============================================================
-    PrimFunc: sum
-    
-    - Input Tensors
-      lv20: shape=(32, 16, 1024), dtype=float32
-    
-    - Output Tensor
-      lv22: shape=(32, 16), dtype=float32
-    
-    - Root Node (Lisp)
-    (loop 0 32 tile_l l
-      (loop 0 1024 tile_n n
-        (store (tensor lv22)
-          (+ (* (load (tensor lv22) (index (tile l) fulltile)) 1) (rsum (load (tensor lv20) (index (tile l) fulltile (tile n))) 2))
-          (index (tile l) fulltile)
-        )
-      )
-    )
-
-
-
-
-
-  ============================================================
-  - sum (call 2): out=lv23: shape=(32, 16), dtype=float32, inputs=[lv21: shape=(32, 16, 1024), dtype=float32]
-  ============================================================
-    PrimFunc: sum
-    
-    - Input Tensors
-      lv21: shape=(32, 16, 1024), dtype=float32
-    
-    - Output Tensor
-      lv23: shape=(32, 16), dtype=float32
-    
-    - Root Node (Lisp)
-    (loop 0 32 tile_l l
-      (loop 0 1024 tile_n n
-        (store (tensor lv23)
-          (+ (* (load (tensor lv23) (index (tile l) fulltile)) 1) (rsum (load (tensor lv21) (index (tile l) fulltile (tile n))) 2))
-          (index (tile l) fulltile)
-        )
-      )
-    )
-
-
-
-
-
-  ============================================================
-  - divide1 (call 1): out=lv25: shape=(32, 16, 1024), dtype=float32, inputs=[lv20: shape=(32, 16, 1024), dtype=float32, lv22: shape=(32, 16), dtype=float32]
-  ============================================================
-    PrimFunc: divide1
-    
-    - Input Tensors
-      lv20: shape=(32, 16, 1024), dtype=float32
-      lv22: shape=(32, 16), dtype=float32
-    
-    - Output Tensor
-      lv25: shape=(32, 16, 1024), dtype=float32
-    
-    - Root Node (Lisp)
-    (loop 0 32 tile_l l
-      (loop 0 1024 tile_n n
-        (store (tensor lv25)
-          (/ (load (tensor lv20) (index (tile l) fulltile (tile n))) (bcast (load (tensor lv22) (index (tile l) fulltile)) 2))
-          (index (tile l) fulltile (tile n))
-        )
-      )
-    )
-
-
-
-
-
-  ============================================================
-  - divide1 (call 2): out=lv27: shape=(32, 16, 1024), dtype=float32, inputs=[lv21: shape=(32, 16, 1024), dtype=float32, lv23: shape=(32, 16), dtype=float32]
-  ============================================================
-    PrimFunc: divide1
-    
-    - Input Tensors
-      lv21: shape=(32, 16, 1024), dtype=float32
-      lv23: shape=(32, 16), dtype=float32
+      lv24: shape=(32, 16, 1024), dtype=float32
     
     - Output Tensor
       lv27: shape=(32, 16, 1024), dtype=float32
     
     - Root Node (Lisp)
     (loop 0 32 tile_l l
-      (loop 0 1024 tile_n n
+      (loop 0 1024 tile_m m
         (store (tensor lv27)
-          (/ (load (tensor lv21) (index (tile l) fulltile (tile n))) (bcast (load (tensor lv23) (index (tile l) fulltile)) 2))
-          (index (tile l) fulltile (tile n))
+          (exp (load (tensor lv24) (index (tile l) fulltile (tile m))))
+          (index (tile l) fulltile (tile m))
         )
       )
     )
@@ -501,22 +345,48 @@ MainFunc
 
 
   ============================================================
-  - sum1 (call 1): out=lv28: shape=(32, 1024), dtype=float32, inputs=[lv27: shape=(32, 16, 1024), dtype=float32]
+  - tir_exp (call 2): out=lv28: shape=(32, 16, 1024), dtype=float32, inputs=[const_6: shape=(32, 16, 1024), dtype=float32, lv24: shape=(32, 16, 1024), dtype=float32]
   ============================================================
-    PrimFunc: sum1
+    PrimFunc: tir_exp
+    
+    - Input Tensors
+      const_6: shape=(32, 16, 1024), dtype=float32
+      lv24: shape=(32, 16, 1024), dtype=float32
+    
+    - Output Tensor
+      lv28: shape=(32, 16, 1024), dtype=float32
+    
+    - Root Node (Lisp)
+    (loop 0 32 tile_l l
+      (loop 0 1024 tile_m m
+        (store (tensor lv28)
+          (exp (/ (+ (load (tensor lv24) (index (tile l) fulltile (tile m))) (load (input const_6) (index (tile l) fulltile (tile m)))) 1.5))
+          (index (tile l) fulltile (tile m))
+        )
+      )
+    )
+
+
+
+
+
+  ============================================================
+  - sum (call 1): out=lv29: shape=(32, 16), dtype=float32, inputs=[lv27: shape=(32, 16, 1024), dtype=float32]
+  ============================================================
+    PrimFunc: sum
     
     - Input Tensors
       lv27: shape=(32, 16, 1024), dtype=float32
     
     - Output Tensor
-      lv28: shape=(32, 1024), dtype=float32
+      lv29: shape=(32, 16), dtype=float32
     
     - Root Node (Lisp)
     (loop 0 32 tile_l l
-      (loop 0 1024 tile_n n
-        (store (output lv28)
-          (rsum (load (tensor lv27) (index (tile l) fulltile (tile n))) 1)
-          (index (tile l) (tile n))
+      (loop 0 1024 tile_m m
+        (store (tensor lv29)
+          (+ (* (load (tensor lv29) (index (tile l) fulltile)) 1) (rsum (load (tensor lv27) (index (tile l) fulltile (tile m))) 2))
+          (index (tile l) fulltile)
         )
       )
     )
@@ -526,22 +396,73 @@ MainFunc
 
 
   ============================================================
-  - matmul2 (call 1): out=lv31: shape=(32, 16, 128), dtype=float32, inputs=[lv25: shape=(32, 16, 1024), dtype=float32, const_2: shape=(32, 1024, 128), dtype=float32]
+  - sum (call 2): out=lv30: shape=(32, 16), dtype=float32, inputs=[lv28: shape=(32, 16, 1024), dtype=float32]
+  ============================================================
+    PrimFunc: sum
+    
+    - Input Tensors
+      lv28: shape=(32, 16, 1024), dtype=float32
+    
+    - Output Tensor
+      lv30: shape=(32, 16), dtype=float32
+    
+    - Root Node (Lisp)
+    (loop 0 32 tile_l l
+      (loop 0 1024 tile_m m
+        (store (tensor lv30)
+          (+ (* (load (tensor lv30) (index (tile l) fulltile)) 1) (rsum (load (tensor lv28) (index (tile l) fulltile (tile m))) 2))
+          (index (tile l) fulltile)
+        )
+      )
+    )
+
+
+
+
+
+  ============================================================
+  - divide1 (call 1): out=lv31: shape=(32, 16, 1024), dtype=float32, inputs=[lv27: shape=(32, 16, 1024), dtype=float32, lv29: shape=(32, 16), dtype=float32]
+  ============================================================
+    PrimFunc: divide1
+    
+    - Input Tensors
+      lv27: shape=(32, 16, 1024), dtype=float32
+      lv29: shape=(32, 16), dtype=float32
+    
+    - Output Tensor
+      lv31: shape=(32, 16, 1024), dtype=float32
+    
+    - Root Node (Lisp)
+    (loop 0 32 tile_l l
+      (loop 0 1024 tile_m m
+        (store (tensor lv31)
+          (/ (load (tensor lv27) (index (tile l) fulltile (tile m))) (bcast (load (tensor lv29) (index (tile l) fulltile)) 2))
+          (index (tile l) fulltile (tile m))
+        )
+      )
+    )
+
+
+
+
+
+  ============================================================
+  - matmul2 (call 1): out=lv34: shape=(32, 16, 128), dtype=float32, inputs=[lv31: shape=(32, 16, 1024), dtype=float32, const_5: shape=(32, 1024, 128), dtype=float32]
   ============================================================
     PrimFunc: matmul2
     
     - Input Tensors
-      lv25: shape=(32, 16, 1024), dtype=float32
-      const_2: shape=(32, 1024, 128), dtype=float32
+      lv31: shape=(32, 16, 1024), dtype=float32
+      const_5: shape=(32, 1024, 128), dtype=float32
     
     - Output Tensor
-      lv31: shape=(32, 16, 128), dtype=float32
+      lv34: shape=(32, 16, 128), dtype=float32
     
     - Root Node (Lisp)
     (loop 0 32 tile_l l
-      (loop 0 1024 tile_n n
-        (store (tensor lv31)
-          (+ (* (load (tensor lv31) (index (tile l) fulltile fulltile)) 1) (@ (load (tensor lv25) (index (tile l) fulltile (tile n))) (load (input const_2) (index (tile l) (tile n) fulltile))))
+      (loop 0 1024 tile_m m
+        (store (tensor lv34)
+          (+ (* (load (tensor lv34) (index (tile l) fulltile fulltile)) 1) (@ (load (tensor lv31) (index (tile l) fulltile (tile m))) (load (input const_5) (index (tile l) (tile m) fulltile))))
           (index (tile l) fulltile fulltile)
         )
       )
@@ -552,20 +473,71 @@ MainFunc
 
 
   ============================================================
-  - transpose3 (call 1): out=lv32: shape=(16, 32, 128), dtype=float32, inputs=[lv31: shape=(32, 16, 128), dtype=float32]
+  - divide1 (call 2): out=lv35: shape=(32, 16, 1024), dtype=float32, inputs=[lv28: shape=(32, 16, 1024), dtype=float32, lv30: shape=(32, 16), dtype=float32]
   ============================================================
-    PrimFunc: transpose3
+    PrimFunc: divide1
     
     - Input Tensors
-      lv31: shape=(32, 16, 128), dtype=float32
+      lv28: shape=(32, 16, 1024), dtype=float32
+      lv30: shape=(32, 16), dtype=float32
     
     - Output Tensor
-      lv32: shape=(16, 32, 128), dtype=float32
+      lv35: shape=(32, 16, 1024), dtype=float32
     
     - Root Node (Lisp)
     (loop 0 32 tile_l l
-      (store (tensor lv32)
-        (permute3 (load (tensor lv31) (index (tile l) fulltile fulltile)) 1 0 2)
+      (loop 0 1024 tile_m m
+        (store (tensor lv35)
+          (/ (load (tensor lv28) (index (tile l) fulltile (tile m))) (bcast (load (tensor lv30) (index (tile l) fulltile)) 2))
+          (index (tile l) fulltile (tile m))
+        )
+      )
+    )
+
+
+
+
+
+  ============================================================
+  - sum1 (call 1): out=lv36: shape=(32, 1024), dtype=float32, inputs=[lv35: shape=(32, 16, 1024), dtype=float32]
+  ============================================================
+    PrimFunc: sum1
+    
+    - Input Tensors
+      lv35: shape=(32, 16, 1024), dtype=float32
+    
+    - Output Tensor
+      lv36: shape=(32, 1024), dtype=float32
+    
+    - Root Node (Lisp)
+    (loop 0 32 tile_l l
+      (loop 0 1024 tile_m m
+        (store (output lv36)
+          (rsum (load (tensor lv35) (index (tile l) fulltile (tile m))) 1)
+          (index (tile l) (tile m))
+        )
+      )
+    )
+
+
+
+
+
+  ============================================================
+  - transpose2 (call 1): out=lv37: shape=(16, 32, 128), dtype=float32, inputs=[lv34: shape=(32, 16, 128), dtype=float32]
+  ============================================================
+    PrimFunc: transpose2
+    
+    - Input Tensors
+      lv34: shape=(32, 16, 128), dtype=float32
+    
+    - Output Tensor
+      lv37: shape=(16, 32, 128), dtype=float32
+    
+    - Root Node (Lisp)
+    (loop 0 32 tile_l l
+      (store (tensor lv37)
+        (permute3 (load (tensor lv34) (index (tile l) fulltile fulltile)) 1 0 2)
         (index fulltile (tile l) fulltile)
       )
     )
@@ -575,20 +547,20 @@ MainFunc
 
 
   ============================================================
-  - reshape1 (call 1): out=lv33: shape=(16, 4096), dtype=float32, inputs=[lv32: shape=(16, 32, 128), dtype=float32]
+  - reshape1 (call 1): out=lv38: shape=(16, 4096), dtype=float32, inputs=[lv37: shape=(16, 32, 128), dtype=float32]
   ============================================================
     PrimFunc: reshape1
     
     - Input Tensors
-      lv32: shape=(16, 32, 128), dtype=float32
+      lv37: shape=(16, 32, 128), dtype=float32
     
     - Output Tensor
-      lv33: shape=(16, 4096), dtype=float32
+      lv38: shape=(16, 4096), dtype=float32
     
     - Root Node (Lisp)
     (loop 0 4096 128 j
-      (store (output lv33)
-        (squeeze (load (tensor lv32) (index fulltile (elem j) fulltile)) 1)
+      (store (output lv38)
+        (squeeze (load (tensor lv37) (index fulltile (elem j) fulltile)) 1)
         (index fulltile (tile j))
       )
     )

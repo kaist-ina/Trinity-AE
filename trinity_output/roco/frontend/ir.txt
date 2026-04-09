@@ -1,106 +1,106 @@
 (seq
   (loop 0 4096 tile_j j
-    (loop 0 4096 tile_i i
-      (store (tensor lv1,lv3,lv5)
-        (+ (* (load (tensor lv1,lv3,lv5) (index fulltile (tile j))) 1) (@ (load (input x) (index fulltile (tile i))) (transpose (load (input p_q_proj_weight,p_k_proj_weight,p_v_proj_weight) (index (tile j) (tile i))))))
+    (loop 0 4096 tile_k k
+      (store (tensor lv,lv1,lv2)
+        (+ (* (load (tensor lv,lv1,lv2) (index fulltile (tile j))) 1) (@ (load (input x) (index fulltile (tile k))) (load (input const_1,const_2,const_3) (index (tile k) (tile j)))))
         (index fulltile (tile j))
       )
     )
   )
 (seq
   (loop 0 4096 128 j
-    (store (tensor lv6,lv7,lv8)
-      (unsqueeze (load (tensor lv1,lv3,lv5) (index fulltile (tile j))) 1)
+    (store (tensor lv3,lv4,lv5)
+      (unsqueeze (load (tensor lv,lv1,lv2) (index fulltile (tile j))) 1)
       (index fulltile (elem j) fulltile)
     )
   )
 (seq
   (loop 0 32 tile_l l
-    (store (tensor lv9,lv10,lv11)
-      (permute3 (load (tensor lv6,lv7,lv8) (index fulltile (tile l) fulltile)) 1 0 2)
+    (store (tensor lv6,lv7,lv8)
+      (permute3 (load (tensor lv3,lv4,lv5) (index fulltile (tile l) fulltile)) 1 0 2)
       (index (tile l) fulltile fulltile)
     )
   )
 (seq
   (loop 0 32 tile_l l
-    (store (input const_1,const_2)
-      (load (tensor lv10,lv11) (index (tile l) fulltile fulltile))
-      (index (tile l) (const_tile 1024 16) fulltile)
+    (store (input const_4,const_5)
+      (load (tensor lv7,lv8) (index (tile l) fulltile fulltile))
+      (index (tile l) (const_tile 1008 16) fulltile)
     )
   )
 (seq
   (loop 0 32 tile_l l
-    (loop 0 1040 tile_m m
-      (store (tensor lv27)
-        (@ (load (tensor lv9) (index (tile l) fulltile fulltile)) (permute3 (load (input const_1) (index (tile l) (tile m) fulltile)) 0 2 1))
+    (loop 0 1024 tile_m m
+      (store (tensor lv24)
+        (@ (load (tensor lv6) (index (tile l) fulltile fulltile)) (permute3 (load (input const_4) (index (tile l) (tile m) fulltile)) 0 2 1))
         (index (tile l) fulltile (tile m))
       )
     )
   )
 (seq
   (loop 0 32 tile_l l
-    (loop 0 1040 tile_m m
-      (store (tensor lv28)
-        (exp (load (tensor lv27) (index (tile l) fulltile (tile m))))
+    (loop 0 1024 tile_m m
+      (store (tensor lv25)
+        (exp (load (tensor lv24) (index (tile l) fulltile (tile m))))
         (index (tile l) fulltile (tile m))
       )
     )
   )
 (seq
   (loop 0 32 tile_l l
-    (loop 0 1040 tile_m m
-      (store (tensor lv29)
-        (+ (* (load (tensor lv29) (index (tile l) fulltile)) 1) (rsum (load (tensor lv28) (index (tile l) fulltile (tile m))) 2))
+    (loop 0 1024 tile_m m
+      (store (tensor lv26)
+        (+ (* (load (tensor lv26) (index (tile l) fulltile)) 1) (rsum (load (tensor lv25) (index (tile l) fulltile (tile m))) 2))
         (index (tile l) fulltile)
       )
     )
   )
 (seq
   (loop 0 32 tile_l l
-    (loop 0 1040 tile_m m
-      (store (tensor lv31)
-        (/ (load (tensor lv28) (index (tile l) fulltile (tile m))) (bcast (load (tensor lv29) (index (tile l) fulltile)) 2))
+    (loop 0 1024 tile_m m
+      (store (tensor lv27)
+        (/ (load (tensor lv25) (index (tile l) fulltile (tile m))) (bcast (load (tensor lv26) (index (tile l) fulltile)) 2))
         (index (tile l) fulltile (tile m))
       )
     )
   )
 (seq
   (loop 0 32 tile_l l
-    (loop 0 1040 tile_m m
-      (store (tensor lv34)
-        (+ (* (load (tensor lv34) (index (tile l) fulltile fulltile)) 1) (@ (load (tensor lv31) (index (tile l) fulltile (tile m))) (load (input const_2) (index (tile l) (tile m) fulltile))))
+    (loop 0 1024 tile_m m
+      (store (tensor lv30)
+        (+ (* (load (tensor lv30) (index (tile l) fulltile fulltile)) 1) (@ (load (tensor lv27) (index (tile l) fulltile (tile m))) (load (input const_5) (index (tile l) (tile m) fulltile))))
         (index (tile l) fulltile fulltile)
       )
     )
   )
 (seq
   (loop 0 32 tile_l l
-    (loop 0 1040 tile_m m
-      (store (output lv35)
-        (rsum (load (tensor lv31) (index (tile l) fulltile (tile m))) 1)
+    (loop 0 1024 tile_m m
+      (store (output lv31)
+        (rsum (load (tensor lv27) (index (tile l) fulltile (tile m))) 1)
         (index (tile l) (tile m))
       )
     )
   )
 (seq
   (loop 0 32 tile_l l
-    (loop 0 1040 tile_m m
-      (store (output lv37)
-        (rsum (* (load (tensor lv31) (index (tile l) fulltile (tile m))) (load (tensor lv31) (index (tile l) fulltile (tile m)))) 1)
+    (loop 0 1024 tile_m m
+      (store (output lv33)
+        (rsum (* (load (tensor lv27) (index (tile l) fulltile (tile m))) (load (tensor lv27) (index (tile l) fulltile (tile m)))) 1)
         (index (tile l) (tile m))
       )
     )
   )
 (seq
   (loop 0 32 tile_l l
-    (store (tensor lv38)
-      (permute3 (load (tensor lv34) (index (tile l) fulltile fulltile)) 1 0 2)
+    (store (tensor lv34)
+      (permute3 (load (tensor lv30) (index (tile l) fulltile fulltile)) 1 0 2)
       (index fulltile (tile l) fulltile)
     )
   )
 (loop 0 4096 128 j
-  (store (output lv39)
-    (squeeze (load (tensor lv38) (index fulltile (elem j) fulltile)) 1)
+  (store (output lv35)
+    (squeeze (load (tensor lv34) (index fulltile (elem j) fulltile)) 1)
     (index fulltile (tile j))
   )
 )

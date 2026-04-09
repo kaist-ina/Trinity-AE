@@ -6,28 +6,28 @@
     ],
     "type": "input"
   },
-  "p_q_proj_weight": {
-    "shape": [
-      4096,
-      4096
-    ],
-    "type": "input"
-  },
-  "p_k_proj_weight": {
-    "shape": [
-      4096,
-      4096
-    ],
-    "type": "input"
-  },
-  "p_v_proj_weight": {
-    "shape": [
-      4096,
-      4096
-    ],
-    "type": "input"
-  },
   "const_1": {
+    "shape": [
+      4096,
+      4096
+    ],
+    "type": "input"
+  },
+  "const_2": {
+    "shape": [
+      4096,
+      4096
+    ],
+    "type": "input"
+  },
+  "const_3": {
+    "shape": [
+      4096,
+      4096
+    ],
+    "type": "input"
+  },
+  "const_4": {
     "shape": [
       32,
       1024,
@@ -35,7 +35,7 @@
     ],
     "type": "input"
   },
-  "const_2": {
+  "const_5": {
     "shape": [
       32,
       1024,
@@ -49,7 +49,21 @@
     ],
     "type": "intermediate"
   },
+  "lv4": {
+    "shape": [
+      16,
+      4096
+    ],
+    "type": "intermediate"
+  },
   "lv5": {
+    "shape": [
+      16,
+      4096
+    ],
+    "type": "intermediate"
+  },
+  "lv6": {
     "shape": [
       16,
       4096
@@ -63,92 +77,55 @@
     ],
     "type": "intermediate"
   },
+  "lv8": {
+    "shape": [
+      16,
+      32,
+      128
+    ],
+    "type": "intermediate"
+  },
   "lv9": {
     "shape": [
       16,
-      4096
+      32,
+      128
+    ],
+    "type": "intermediate"
+  },
+  "lv10": {
+    "shape": [
+      16,
+      32,
+      128
     ],
     "type": "intermediate"
   },
   "lv11": {
     "shape": [
+      32,
       16,
-      4096
+      128
     ],
     "type": "intermediate"
   },
   "lv12": {
     "shape": [
-      16,
       32,
+      16,
       128
     ],
     "type": "intermediate"
   },
   "lv13": {
     "shape": [
-      16,
-      32,
-      128
-    ],
-    "type": "intermediate"
-  },
-  "lv14": {
-    "shape": [
-      16,
-      32,
-      128
-    ],
-    "type": "intermediate"
-  },
-  "lv16": {
-    "shape": [
       32,
       16,
       128
     ],
     "type": "intermediate"
   },
-  "lv17": {
-    "shape": [
-      32,
-      16,
-      128
-    ],
-    "type": "intermediate"
-  },
-  "lv20": {
-    "shape": [
-      32,
-      128,
-      1024
-    ],
-    "type": "intermediate"
-  },
-  "lv23": {
-    "shape": [
-      32,
-      16,
-      1024
-    ],
-    "type": "intermediate"
-  },
-  "lv24": {
-    "shape": [
-      32,
-      16,
-      1024
-    ],
-    "type": "intermediate"
-  },
-  "lv25": {
-    "shape": [
-      32,
-      16
-    ],
-    "type": "intermediate"
-  },
-  "lv27": {
+  "lv29": {
     "shape": [
       32,
       16,
@@ -160,11 +137,34 @@
     "shape": [
       32,
       16,
-      128
+      1024
     ],
     "type": "intermediate"
   },
   "lv31": {
+    "shape": [
+      32,
+      16
+    ],
+    "type": "intermediate"
+  },
+  "lv32": {
+    "shape": [
+      32,
+      16,
+      1024
+    ],
+    "type": "intermediate"
+  },
+  "lv35": {
+    "shape": [
+      32,
+      16,
+      128
+    ],
+    "type": "intermediate"
+  },
+  "lv36": {
     "shape": [
       16,
       32,
@@ -172,7 +172,7 @@
     ],
     "type": "intermediate"
   },
-  "lv32": {
+  "lv37": {
     "shape": [
       16,
       4096
