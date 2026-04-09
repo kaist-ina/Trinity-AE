@@ -1,3 +1,12 @@
+# Trinity output files
+trinity_output/*
+backend/results/vanilla/*.py
+backend/results/prenorm/*.py
+backend/results/qknorm/*.py
+backend/results/roco/*.py
+backend/results/keyformer/*.py
+backend/results/ffn/*.py
+
 # Byte-compiled / optimized / DLL files
 __pycache__
 *.py[codz]
