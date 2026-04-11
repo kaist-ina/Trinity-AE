@@ -44,6 +44,7 @@ class SingleKernelPipeline:
 
         cross_sloop_memory_tensors = self.gen.analyzer.identify_cross_sloop_memory_tensors(ast)
         accumulators = self.gen.analyzer.identify_accumulators(ast)
+        self.state.all_accumulators = accumulators
 
         fp32_tensors = self.gen.analyzer.identify_fp32_tensors(ast)
         self.state.fp32_tensors = fp32_tensors

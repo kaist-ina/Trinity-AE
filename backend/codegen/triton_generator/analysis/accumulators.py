@@ -111,7 +111,8 @@ class AccumulatorAnalysis:
                 else:
                     shape_str = f"({', '.join(shape_params)})"
 
-                code += f"{indent}{tensor_name} = tl.zeros({shape_str}, dtype=tl.float16)\n"
+                # Accumulators always use fp32 for precision during loop accumulation
+                code += f"{indent}{tensor_name} = tl.zeros({shape_str}, dtype=tl.float32)\n"
 
         return code
 
@@ -163,9 +164,14 @@ class AccumulatorAnalysis:
         return accumulators
 
     def identify_fp32_tensors(self, ast: ASTNode) -> set:
-        """Identify intermediate tensors that should stay in fp32."""
+        """Identify intermediate tensors that should stay in fp32.
+
+        Only tensors that are direct store targets of fp32-producing operations
+        (exp, sqrt, sigmoid, erf) are marked. Input tensors of these operations
+        are NOT marked — they receive .to(tl.float32) cast at the call site.
+        Accumulators are handled separately (always fp32 in init).
+        """
         fp32_tensors = set()
-        fp32_dependent_tensors = set()
 
         def find_fp32_stores(node: ASTNode):
             if node.node_type == NodeType.STORE and len(node.children) >= 2:
@@ -201,7 +207,7 @@ class AccumulatorAnalysis:
                             relevant_value = value_node
 
                         if self.uses_fp32_tensors(relevant_value, fp32_tensors):
-                            fp32_dependent_tensors.add(stored_tensor)
+                            fp32_tensors.add(stored_tensor)
 
             for child in node.children:
                 if isinstance(child, ASTNode):
@@ -213,8 +219,6 @@ class AccumulatorAnalysis:
         while len(fp32_tensors) != prev_size:
             prev_size = len(fp32_tensors)
             find_fp32_dependencies(ast)
-            fp32_tensors.update(fp32_dependent_tensors)
-            fp32_dependent_tensors.clear()
 
         return fp32_tensors
 
@@ -274,11 +278,10 @@ class AccumulatorAnalysis:
         return self.contains_fp32_tensor_load(node, exp_tensor_set)
 
     def generate_kernel_accumulator_init(self) -> str:
-        """Generate initialization code for kernel accumulators."""
+        """Generate initialization code for kernel accumulators.
+        All accumulators use fp32 for precision during loop accumulation."""
         if not self.state.kernel_accumulators:
             return ""
-
-        fp32_tensors = self.state.get_fp32_tensors()
 
         code = ""
         indent_str = "    " * self.state.indent_level
@@ -319,7 +322,7 @@ class AccumulatorAnalysis:
                         actual_shape_dims.append("1")
 
                 shape_str = ", ".join(actual_shape_dims)
-                dtype = "tl.float32" if tensor in fp32_tensors else "tl.float16"
+                dtype = "tl.float32"
                 if len(actual_shape_dims) == 1:
                     code += f"{indent_str}{tensor} = tl.zeros(({shape_str},), dtype={dtype})\n"
                 else:
@@ -344,7 +347,7 @@ class AccumulatorAnalysis:
                         padded_shape_dims.append(str(padded_size))
 
                 padded_shape_str = ", ".join(padded_shape_dims)
-                dtype = "tl.float32" if tensor in fp32_tensors else "tl.float16"
+                dtype = "tl.float32"
                 if len(padded_shape_dims) == 1:
                     code += (
                         f"{indent_str}{tensor} = tl.zeros(({padded_shape_str},), dtype={dtype})\n"
@@ -354,7 +357,7 @@ class AccumulatorAnalysis:
                         f"{indent_str}{tensor} = tl.zeros(({padded_shape_str}), dtype={dtype})\n"
                     )
             else:
-                dtype = "tl.float32" if tensor in fp32_tensors else "tl.float16"
+                dtype = "tl.float32"
                 code += f"{indent_str}{tensor} = tl.zeros((1,), dtype={dtype})[0]\n"
 
         return code

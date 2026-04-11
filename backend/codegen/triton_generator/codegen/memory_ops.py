@@ -45,7 +45,17 @@ class MemoryOps:
         # Check if this is a kernel accumulator - if so, just return the accumulator variable
         # UNLESS it's also a cross-sloop memory tensor (needs actual load)
         if tensor_name in self.state.kernel_accumulators and tensor_name not in self.state.cross_sloop_memory_tensors:
-            node.temp_var = tensor_name
+            # If accumulator is loaded outside its accumulation loop,
+            # and the store target is not another accumulator, cast to fp16
+            all_accumulators = getattr(self.state, 'all_accumulators', set())
+            store_target = getattr(self.state, 'current_store_tensor', None)
+            in_sloop = hasattr(self.state, 'current_sloop_info') and self.state.current_sloop_info
+            store_target_is_accumulator = store_target and store_target in all_accumulators
+
+            if not in_sloop and not store_target_is_accumulator:
+                node.temp_var = f"{tensor_name}.to(tl.float16)"
+            else:
+                node.temp_var = tensor_name
             return ""
 
         # Check if this is a local intermediate tensor (not cross-kernel and not cross-sloop memory)
@@ -53,8 +63,17 @@ class MemoryOps:
             tensor_name not in self.state.cross_kernel_tensors and
             not (hasattr(self.state, 'cross_sloop_memory_tensors') and tensor_name in self.state.cross_sloop_memory_tensors)):
             # For local intermediate tensors, directly reference without reshape
-            # tl.dot can handle 3D tensors with batch dimension
-            node.temp_var = tensor_name
+            # If this is a completed accumulator loaded outside its loop,
+            # and the store target is not another accumulator, cast to fp16
+            all_accumulators = getattr(self.state, 'all_accumulators', set())
+            store_target = getattr(self.state, 'current_store_tensor', None)
+            in_sloop = hasattr(self.state, 'current_sloop_info') and self.state.current_sloop_info
+            store_target_is_accumulator = store_target and store_target in all_accumulators
+
+            if tensor_name in all_accumulators and not in_sloop and not store_target_is_accumulator:
+                node.temp_var = f"{tensor_name}.to(tl.float16)"
+            else:
+                node.temp_var = tensor_name
             return ""
 
         offset_expr = self.gen.indexer.generate_index(index_node, tensor_name)
@@ -209,295 +228,17 @@ class MemoryOps:
         # First generate any load operations in the value expression
         code = ""
 
-        # Check if value is a simple transformation operation (permute, squeeze, unsqueeze)
-        # that we can generate inline without temp variable
+        # Delegate transform operations to transforms.py via dispatch
         if val_node.node_type in [NodeType.PERMUTE3, NodeType.TRANSPOSE, NodeType.SQUEEZE, NodeType.UNSQUEEZE]:
-            # For these operations, generate them inline and assign directly to target tensor
-            if val_node.node_type == NodeType.PERMUTE3:
-                child = val_node.children[0]
-                # Generate child if needed (could be LOAD, UNSQUEEZE, or other operations)
-                if not hasattr(child, 'temp_var'):
-                    # For UNSQUEEZE nodes, we need special handling to avoid inline generation
-                    if child.node_type == NodeType.UNSQUEEZE:
-                        # Generate the unsqueeze operation properly
-                        unsqueeze_child = child.children[0]
-                        if not hasattr(unsqueeze_child, 'temp_var'):
-                            child_code = self.gen.dispatch.generate_node(unsqueeze_child)
-                            if child_code:
-                                code += child_code
-                                if not code.endswith('\n'):
-                                    code += '\n'
-
-                        # Now generate the unsqueeze itself
-                        child_code = self.gen.dispatch.generate_node(child)
-                        if child_code:
-                            code += child_code
-                            if not code.endswith('\n'):
-                                code += '\n'
-                    else:
-                        child_code = self.gen.dispatch.generate_node(child)
-                        if child_code:  # If code was generated, append it
-                            code += child_code
-                            if not code.endswith('\n'):
-                                code += '\n'
-
-                # Get tensor expression - at this point child should have temp_var
-                if hasattr(child, 'temp_var'):
-                    tensor_expr = child.temp_var
-                else:
-                    # This should not happen anymore with proper generation
-                    raise ValueError(f"Expected temp_var for {child.node_type} node")
-
-                # Get permutation dimensions
-                perm_strs = []
-                for i in range(len(val_node.children)-1):
-                    dim = self.gen.dispatch.generate_node(val_node.children[i+1])
-                    perm_strs.append(str(dim))
-                perm_str = f"({', '.join(perm_strs)})"
-                value_expr = f"tl.permute({tensor_expr}, {perm_str})"
-            elif val_node.node_type == NodeType.TRANSPOSE:
-                child = val_node.children[0]
-                # Generate child if needed
-                if not hasattr(child, 'temp_var'):
-                    if child.node_type == NodeType.UNSQUEEZE:
-                        unsqueeze_child = child.children[0]
-                        if not hasattr(unsqueeze_child, 'temp_var'):
-                            child_code = self.gen.dispatch.generate_node(unsqueeze_child)
-                            if child_code:
-                                code += child_code
-                                if not code.endswith('\n'):
-                                    code += '\n'
-
-                        child_code = self.gen.dispatch.generate_node(child)
-                        if child_code:
-                            code += child_code
-                            if not code.endswith('\n'):
-                                code += '\n'
-                    else:
-                        child_code = self.gen.dispatch.generate_node(child)
-                        if child_code:
-                            code += child_code
-                            if not code.endswith('\n'):
-                                code += '\n'
-
-                if hasattr(child, 'temp_var'):
-                    tensor_expr = child.temp_var
-                else:
-                    raise ValueError(f"Expected temp_var for {child.node_type} node")
-
-                perm_dims, perm_str = self.gen.transforms.build_transpose_permutation(child, val_node)
-                if len(perm_dims) == 2 and perm_dims == (1, 0):
-                    value_expr = f"tl.trans({tensor_expr})"
-                else:
-                    value_expr = f"tl.permute({tensor_expr}, {perm_str})"
-
-            elif val_node.node_type == NodeType.UNSQUEEZE:
-                child = val_node.children[0]
-                # Generate child if needed
-                if child.node_type == NodeType.LOAD and not hasattr(child, 'temp_var'):
-                    code += self.gen.dispatch.generate_node(child) + "\n"
-
-                # Get tensor expression
-                tensor_expr = child.temp_var if hasattr(child, 'temp_var') else self.gen.dispatch.generate_node(child)
-
-                # Get dimension
-                dim = self.gen.dispatch.generate_node(val_node.children[1])
-                dim_value = None
-                try:
-                    dim_value = int(dim)
-                except (TypeError, ValueError):
-                    dim_value = None
-
-                value_expr = f"tl.expand_dims({tensor_expr}, {dim})"
-                self.state.debug_log(
-                    f"inline unsqueeze child={child.node_type} dim={dim} dim_value={dim_value} "
-                    f"child.block_shape={getattr(child, 'block_shape', None)} "
-                    f"child.tensor_shape={getattr(child, 'tensor_shape', None)}"
-                )
-                if hasattr(child, "tensor_shape") and child.tensor_shape and dim_value is not None:
-                    child_shape = list(child.tensor_shape)
-                    if dim_value < 0:
-                        dim_value += len(child_shape) + 1
-                    if 0 <= dim_value <= len(child_shape):
-                        child_shape.insert(dim_value, 1)
-                        val_node.tensor_shape = tuple(child_shape)
-                if hasattr(child, "block_shape") and child.block_shape and dim_value is not None:
-                    block_shape = list(child.block_shape)
-                    dim_index = dim_value
-                    if dim_index < 0:
-                        dim_index += len(block_shape) + 1
-                    if 0 <= dim_index <= len(block_shape):
-                        block_shape.insert(dim_index, 1)
-                        val_node.block_shape = tuple(block_shape)
-                if dim_value is not None:
-                    val_node.unsqueeze_dim = dim_value
-                self.state.debug_log(
-                    f"inline unsqueeze result block_shape={getattr(val_node, 'block_shape', None)} "
-                    f"tensor_shape={getattr(val_node, 'tensor_shape', None)}"
-                )
-
-            elif val_node.node_type == NodeType.SQUEEZE:
-                child = val_node.children[0]
-                squeeze_handled = False
-                # Generate child if needed
-                if child.node_type in [NodeType.LOAD, NodeType.PERMUTE3, NodeType.TRANSPOSE, NodeType.UNSQUEEZE] and not hasattr(child, 'temp_var'):
-                    code += self.gen.dispatch.generate_node(child)
-                    if not code.endswith('\n'):
-                        code += '\n'
-
-                # Get tensor expression
-                if hasattr(child, 'temp_var'):
-                    tensor_expr = child.temp_var
-                else:
-                    raise ValueError(f"Expected temp_var for {child.node_type} node in squeeze")
-
-                # Get dimension (for squeeze, we use reshape instead)
-                # Infer the source tensor name for dimension info
-                source_tensor_name = self.gen.transforms.infer_tensor_name(child)
-                squeeze_dim = None
-                try:
-                    squeeze_dim = int(self.gen.dispatch.generate_node(val_node.children[1]))
-                except (TypeError, ValueError):
-                    squeeze_dim = None
-
-                self.state.debug_log(
-                    f"inline squeeze child={child.node_type} dim={squeeze_dim} "
-                    f"child.block_shape={getattr(child, 'block_shape', None)} "
-                    f"child.tensor_shape={getattr(child, 'tensor_shape', None)}"
-                )
-
-                if hasattr(child, "block_shape") and child.block_shape and squeeze_dim is not None:
-                    block_shape = list(child.block_shape)
-                    dim_index = squeeze_dim
-                    if dim_index < 0:
-                        dim_index += len(block_shape)
-                    if 0 <= dim_index < len(block_shape):
-                        del block_shape[dim_index]
-                        shape_parts = [str(dim) for dim in block_shape]
-                        shape_str = f"({', '.join(shape_parts)})"
-                        value_expr = f"tl.reshape({tensor_expr}, {shape_str})"
-                        val_node.block_shape = tuple(block_shape)
-                        if hasattr(child, "tensor_shape") and child.tensor_shape:
-                            tensor_shape = list(child.tensor_shape)
-                            dim_idx = squeeze_dim
-                            if dim_idx < 0:
-                                dim_idx += len(tensor_shape)
-                            if 0 <= dim_idx < len(tensor_shape):
-                                del tensor_shape[dim_idx]
-                                val_node.tensor_shape = tuple(tensor_shape)
-                        # Skip tensor_shape-based reshape handling
-                        source_tensor_name = None
-                        squeeze_handled = True
-                        self.state.debug_log(
-                            f"inline squeeze used block_shape -> {val_node.block_shape} "
-                            f"tensor_shape={getattr(val_node, 'tensor_shape', None)}"
-                        )
-
-                # For squeeze operations, we need to use the source tensor's dimensions
-                # after removing the squeezed dimension
-                if not squeeze_handled and source_tensor_name and source_tensor_name in self.state.tensor_shapes:
-                    # Check if child was a permute operation to map dimensions correctly
-                    if child.node_type in [NodeType.PERMUTE3, NodeType.TRANSPOSE] and hasattr(child, 'permute_dims'):
-                        # Get the permuted dimension order
-                        perm_dims = child.permute_dims  # e.g., (1, 0, 2)
-                        shape_parts = []
-
-                        # Build shape from source tensor dimensions, excluding squeezed dim
-                        for i in range(len(perm_dims)):
-                            if i != squeeze_dim:  # Skip the dimension to be squeezed
-                                orig_dim = perm_dims[i]
-                                # Get the dimension value from tensor_shapes
-                                shape = self.state.tensor_shapes[source_tensor_name]
-                                if orig_dim < len(shape):
-                                    dim_value = shape[orig_dim]
-                                    if isinstance(dim_value, str):
-                                        # Symbolic dimension
-                                        shape_parts.append(dim_value)
-                                    else:
-                                        # Literal number
-                                        shape_parts.append(str(dim_value))
-                                else:
-                                    # Fallback
-                                    shape_parts.append(f"{source_tensor_name}_dim{orig_dim}")
-                    else:
-                        # No permutation, use original dimension order
-                        shape_parts = []
-                        num_dims = len(self.state.tensor_shapes[source_tensor_name])
-                        shape = self.state.tensor_shapes[source_tensor_name]
-                        for i in range(num_dims):
-                            if i != squeeze_dim:  # Skip the dimension to be squeezed
-                                dim_value = shape[i]
-                                if isinstance(dim_value, str):
-                                    # Symbolic dimension
-                                    shape_parts.append(dim_value)
-                                else:
-                                    # Literal number
-                                    shape_parts.append(str(dim_value))
-
-                    shape_str = f"({', '.join(shape_parts)})"
-                    padded_parts, _ = self.gen.shape_utils.get_padded_shape(shape_values) if shape_values else (shape_parts, shape_values)
-                    padded_shape_str = f"({', '.join(padded_parts)})"
-                    value_expr = f"tl.reshape({tensor_expr}, {padded_shape_str})"
-                elif not squeeze_handled and hasattr(child, "tensor_shape") and child.tensor_shape and squeeze_dim is not None:
-                    child_shape = child.tensor_shape
-                    if squeeze_dim < 0:
-                        squeeze_dim += len(child_shape)
-                    if 0 <= squeeze_dim < len(child_shape):
-                        shape_parts = []
-                        shape_values = []
-                        for i, dim_value in enumerate(child_shape):
-                            if i == squeeze_dim:
-                                continue
-                            if isinstance(dim_value, str):
-                                shape_parts.append(dim_value)
-                            else:
-                                shape_parts.append(str(dim_value))
-                            shape_values.append(dim_value)
-                        shape_str = f"({', '.join(shape_parts)})"
-                        padded_parts, _ = self.gen.shape_utils.get_padded_shape(shape_values) if shape_values else (shape_parts, shape_values)
-                        padded_shape_str = f"({', '.join(padded_parts)})"
-                        value_expr = f"tl.reshape({tensor_expr}, {padded_shape_str})"
-                        if shape_values:
-                            val_node.tensor_shape = tuple(shape_values)
-                elif not squeeze_handled:
-                    # Fallback: use source tensor shape after squeeze
-                    # For squeeze operation, we need to use the dimensions of the source tensor O
-                    # not the output tensor O2
-                    if source_tensor_name and source_tensor_name in self.state.tensor_shapes:
-                        # Get source tensor shape and remove squeezed dimension
-                        shape_parts = []
-                        source_shape = self.state.tensor_shapes[source_tensor_name]
-
-                        for i in range(len(source_shape)):
-                            if i != squeeze_dim:  # Skip the squeezed dimension
-                                dim_value = source_shape[i]
-                                if isinstance(dim_value, str):
-                                    shape_parts.append(dim_value)
-                                else:
-                                    shape_parts.append(str(dim_value))
-
-                        shape_str = f"({', '.join(shape_parts)})"
-                        padded_parts, _ = self.gen.shape_utils.get_padded_shape(shape_values) if shape_values else (shape_parts, shape_values)
-                        padded_shape_str = f"({', '.join(padded_parts)})"
-                        value_expr = f"tl.reshape({tensor_expr}, {padded_shape_str})"
-                    elif tensor_name in self.state.tensor_shapes:
-                        # If we still don't have source tensor info, use output tensor dimensions
-                        shape_dims = []
-                        for i in range(len(self.state.tensor_shapes[tensor_name])):
-                            dim_value = self.state.tensor_shapes[tensor_name][i]
-                            if isinstance(dim_value, str):
-                                # Symbolic dimension - use it directly
-                                shape_dims.append(dim_value)
-                            else:
-                                # Literal number
-                                shape_dims.append(str(dim_value))
-                        shape_str = f"({', '.join(shape_dims)})"
-                        padded_parts, _ = self.gen.shape_utils.get_padded_shape(shape_dims) if shape_dims else (shape_dims, shape_dims)
-                        padded_shape_str = f"({', '.join(padded_parts)})"
-                        value_expr = f"tl.reshape({tensor_expr}, {padded_shape_str})"
-                    else:
-                        # Last resort: tensor already reshaped in squeeze operation
-                        value_expr = f"{tensor_expr}"
+            val_code = self.gen.dispatch.generate_node(val_node)
+            if val_code:
+                code += val_code
+                if not code.endswith('\n'):
+                    code += '\n'
+            if hasattr(val_node, 'temp_var'):
+                value_expr = val_node.temp_var
+            else:
+                raise ValueError(f"Expected temp_var for {val_node.node_type} node after dispatch")
 
         # Handle other expression types
         elif self.gen.expressions.contains_loads(val_node) or self.gen.expressions.contains_reduce_sum(val_node):
@@ -522,8 +263,12 @@ class MemoryOps:
                 value_expr = value_code
 
         fp32_tensors = self.state.get_fp32_tensors()
-        if tensor_name in fp32_tensors:
-            value_expr = value_expr.replace('.to(tl.float16)', '')
+        all_accumulators = getattr(self.state, 'all_accumulators', set())
+        if tensor_name in fp32_tensors or tensor_name in all_accumulators:
+            # Only strip trailing .to(tl.float16) from the outermost expression,
+            # not from dot operand casts inside the expression
+            if value_expr.endswith('.to(tl.float16)'):
+                value_expr = value_expr[:-len('.to(tl.float16)')]
 
         # Use proper indentation based on current context
         indent_str = '    ' * self.state.indent_level
@@ -539,14 +284,9 @@ class MemoryOps:
             (tensor_type == NodeType.TENSOR and tensor_name in self.state.cross_kernel_tensors) or
             (tensor_type == NodeType.TENSOR and is_cross_sloop_memory)):
             # For output tensors, input tensors, and cross-kernel intermediates, use tl.store
-            dest_dtype = "tl.float32" if tensor_name in fp32_tensors else "tl.float16"
-            if dest_dtype == "tl.float16":
-                if not value_expr.endswith('.to(tl.float16)'):
-                    value_expr = f"{value_expr}.to(tl.float16)"
-            else:
-                value_expr = value_expr.replace('.to(tl.float16)', '')
-                if not value_expr.endswith('.to(tl.float32)'):
-                    value_expr = f"{value_expr}.to(tl.float32)"
+            # Global memory stores are always fp16 to match PyTorch behavior
+            if not value_expr.endswith('.to(tl.float16)'):
+                value_expr = f"{value_expr}.to(tl.float16)"
 
             # Mark this accumulator as stored if it's in a loop
             if tensor_name in self.state.kernel_accumulators and hasattr(self.state, 'current_sloop_info') and self.state.current_sloop_info:
@@ -569,6 +309,13 @@ class MemoryOps:
             else:
                 code += f"{indent_str}tl.store({tensor_name}_ptr + {offset_var}, {value_expr})"
         else:
+            # Non-accumulator intermediate tensors: cast fp32 expressions to fp16
+            # to match PyTorch behavior and maintain loop-carried variable type consistency
+            # Skip if expression already contains fp16 cast (e.g., from accumulator load)
+            if tensor_name not in fp32_tensors and tensor_name not in all_accumulators:
+                if '.to(tl.float16)' not in value_expr:
+                    value_expr = f"{value_expr}.to(tl.float16)"
+
             # For intermediate tensors (pre-allocated with tl.zeros), use direct assignment
             # Check if index has any tiles or if it's a simple element access
             has_tiles = any(child.node_type in [NodeType.TILE, NodeType.FULLTILE]

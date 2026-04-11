@@ -126,7 +126,11 @@ class AllocationPlanner:
                     or tensor_name in cross_sloop_tensors
                     or tensor_name in sloop_intermediate_tensors
                 ):
-                    dtype = "tl.float32" if tensor_name in fp32_tensors else "tl.float16"
+                    # Accumulators always use fp32 for precision during loop accumulation
+                    if tensor_name in accumulators:
+                        dtype = "tl.float32"
+                    else:
+                        dtype = "tl.float32" if tensor_name in fp32_tensors else "tl.float16"
                     code += f"    {tensor_name} = tl.zeros({shape_str}, dtype={dtype})\n"
 
         code += "\n"
