@@ -102,6 +102,14 @@
     "O2": {
       "shape": [16, 4096],
       "type": "output"
+    },
+    "C_out1": {
+      "shape": [32, 1024],
+      "type": "output"
+    },
+    "C_out2": {
+      "shape": [32, 1024],
+      "type": "output"
     }
   }
 }

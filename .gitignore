@@ -230,6 +230,7 @@ trinity_output/batch_runs/
 optimizer/expressions/
 backend/profile_result/
 backend/codegen/triton_generator_backup/
+backend/results/
 
 node_modules/
 package-lock.json
