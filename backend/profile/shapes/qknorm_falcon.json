@@ -79,6 +79,14 @@
       "shape": [71, 16, 64],
       "type": "intermediate"
     },
+    "Q_norm": {
+      "shape": [71, 16, 64],
+      "type": "intermediate"
+    },
+    "K_norm": {
+      "shape": [71, 16, 64],
+      "type": "intermediate"
+    },
     "V": {
       "shape": [71, 16, 64],
       "type": "intermediate"

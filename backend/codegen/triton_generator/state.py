@@ -53,6 +53,7 @@ class CodeGenState:
         self.current_store_tensor = None
         self.fp32_tensors = set()
         self.exp_tensors = set()
+        self.transform_fp32_tensors = set()  # intermediate tensors that stay fp32 due to shape-transform inheritance
         self.current_ast = None
         self.debug = bool(os.environ.get("TRITON_GEN_DEBUG"))
 
@@ -65,10 +66,10 @@ class CodeGenState:
             print(f"[TritonGen] {message}")
 
     def get_fp32_tensors(self) -> set:
-        fp32_tensors = getattr(self, "fp32_tensors", None)
-        if fp32_tensors is not None:
-            return fp32_tensors
-        return getattr(self, "exp_tensors", set())
+        fp32_tensors = getattr(self, "fp32_tensors", None) or set()
+        transform_fp32 = getattr(self, "transform_fp32_tensors", set())
+        exp_tensors = getattr(self, "exp_tensors", set())
+        return fp32_tensors | transform_fp32 | exp_tensors
 
     def is_fp32_tensor(self, tensor_name: str | None) -> bool:
         return bool(tensor_name) and tensor_name in self.get_fp32_tensors()

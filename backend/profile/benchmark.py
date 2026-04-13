@@ -58,6 +58,7 @@ class IRBenchmark:
         warmup_runs: int = 10,
         benchmark_runs: int = 100,
         use_cuda_graph: bool = False,
+        debug_prefix: Optional[str] = None,
     ):
         """Initialize benchmark with shapes.json."""
         self.tensor_types: Dict[str, str] = {}
@@ -66,9 +67,10 @@ class IRBenchmark:
         self.warmup_runs = warmup_runs
         self.benchmark_runs = benchmark_runs
         self.use_cuda_graph = use_cuda_graph
+        self.debug_prefix = debug_prefix
 
         # Setup device
-        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
         if self.device.type == 'cuda':
             torch.cuda.set_device(self.device)
         print(f"GPU: {torch.cuda.get_device_name(self.device)}")
@@ -725,9 +727,14 @@ class IRBenchmark:
             
         except Exception as e:
             # Save kernel code for debugging
-            debug_dir = os.path.join(os.path.dirname(__file__), "debug")
+            if self.debug_prefix:
+                debug_dir = os.path.join(os.path.dirname(__file__), "debug", self.debug_prefix)
+                debug_filename = f"{self.debug_prefix}_{ir_id}.py"
+            else:
+                debug_dir = os.path.join(os.path.dirname(__file__), "debug")
+                debug_filename = f"kernel_{ir_id}.py"
             os.makedirs(debug_dir, exist_ok=True)
-            debug_path = os.path.join(debug_dir, f"kernel_{ir_id}.py")
+            debug_path = os.path.join(debug_dir, debug_filename)
             try:
                 with open(debug_path, "w") as f:
                     f.write(f"# IR ID: {ir_id}\n")
@@ -924,6 +931,7 @@ def run_comprehensive_benchmark(
     warmup_runs=10,
     benchmark_runs=100,
     use_cuda_graph=False,
+    debug_prefix=None,
 ):
     """Run benchmarks for shapes.json."""
     all_results = []
@@ -946,6 +954,7 @@ def run_comprehensive_benchmark(
         warmup_runs=warmup_runs,
         benchmark_runs=benchmark_runs,
         use_cuda_graph=use_cuda_graph,
+        debug_prefix=debug_prefix,
     )
     benchmark_instances.append(benchmark)
     
@@ -1071,7 +1080,9 @@ def main():
     parser.add_argument('--end', action='store_true', help="Run from start ID to the last test case")
     parser.add_argument('--topk', type=int, default=TOP_K, help="Number of top kernels to report")
     parser.add_argument('--all', action='store_true', help="Run all configurations comprehensively")
-    parser.add_argument('--shapes', type=str, required=True, help="Path to shapes.json for tensor shapes")
+    parser.add_argument('--shapes', type=str, help="Path to shapes.json for tensor shapes")
+    parser.add_argument('--type', '-t', type=str, dest='type', help="Benchmark type (e.g. roco, vanilla, ffn)")
+    parser.add_argument('--model', '-m', type=str, dest='model', help="Model name (e.g. llama)")
     parser.add_argument('--optimized', action='store_true', help="Benchmark only representative IRs and predict nearby candidates")
     parser.add_argument('--max-benchmarks', type=int, default=64, help="Maximum number of representative IRs to benchmark")
     parser.add_argument('--seed-samples', type=int, default=16, help="Number of diverse seed representatives")
@@ -1082,12 +1093,28 @@ def main():
     parser.add_argument('--cuda-graph', action='store_true', help="Use CUDA graph capture/replay for benchmarking")
 
     args = parser.parse_args()
-    
+
+    # Derive ir/shapes paths from --type and --model if not explicitly given
+    debug_prefix = None
+    if args.type and args.model:
+        debug_prefix = f"{args.type}_{args.model}"
+        if args.ir is None:
+            args.ir = f"evaluation/{args.type}/{args.type}_{args.model}_cost6_kern1.txt"
+        if args.shapes is None:
+            args.shapes = f"profile/shapes/{args.type}_{args.model}.json"
+
+    if args.ir is None:
+        print("Error: --ir is required unless both --type and --model are specified.")
+        return
+    if args.shapes is None:
+        print("Error: --shapes is required unless both --type and --model are specified.")
+        return
+
     # Validate conflicting arguments
     if args.end and args.num != NUM_EXPRESSIONS:
         print("Error: Cannot use --end and --num together. Use either --num or --end, not both.")
         return
-    
+
     total_expressions = 0
     if args.all:
         with open(args.ir, 'r') as f:
@@ -1120,6 +1147,7 @@ def main():
         warmup_runs=args.warmup_runs,
         benchmark_runs=args.benchmark_runs,
         use_cuda_graph=args.cuda_graph,
+        debug_prefix=debug_prefix,
     )
     
     print(f"\nAll results saved to: {args.output}")

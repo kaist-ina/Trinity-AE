@@ -45,35 +45,23 @@ class MemoryOps:
         # Check if this is a kernel accumulator - if so, just return the accumulator variable
         # UNLESS it's also a cross-sloop memory tensor (needs actual load)
         if tensor_name in self.state.kernel_accumulators and tensor_name not in self.state.cross_sloop_memory_tensors:
-            # If accumulator is loaded outside its accumulation loop,
-            # and the store target is not another accumulator, cast to fp16
-            all_accumulators = getattr(self.state, 'all_accumulators', set())
-            store_target = getattr(self.state, 'current_store_tensor', None)
-            in_sloop = hasattr(self.state, 'current_sloop_info') and self.state.current_sloop_info
-            store_target_is_accumulator = store_target and store_target in all_accumulators
-
-            if not in_sloop and not store_target_is_accumulator:
-                node.temp_var = f"{tensor_name}.to(tl.float16)"
-            else:
-                node.temp_var = tensor_name
+            # Accumulator loads always return fp32 — no eager cast here.
+            # fp16 conversion happens at the actual point of use:
+            #   - global memory store: generate_store adds .to(fp16)
+            #   - tl.dot input: promote_dot_operands adds .to(fp16)
+            #   - non-transform intermediate store: generate_store adds .to(fp16)
+            # Eager casting here would cause overflow in downstream x*x patterns
+            # (fp16 max ≈ 65504, values > 256 overflow when squared).
+            node.temp_var = tensor_name
             return ""
 
         # Check if this is a local intermediate tensor (not cross-kernel and not cross-sloop memory)
         if (tensor_name in self.state.intermediate_tensors and
             tensor_name not in self.state.cross_kernel_tensors and
             not (hasattr(self.state, 'cross_sloop_memory_tensors') and tensor_name in self.state.cross_sloop_memory_tensors)):
-            # For local intermediate tensors, directly reference without reshape
-            # If this is a completed accumulator loaded outside its loop,
-            # and the store target is not another accumulator, cast to fp16
-            all_accumulators = getattr(self.state, 'all_accumulators', set())
-            store_target = getattr(self.state, 'current_store_tensor', None)
-            in_sloop = hasattr(self.state, 'current_sloop_info') and self.state.current_sloop_info
-            store_target_is_accumulator = store_target and store_target in all_accumulators
-
-            if tensor_name in all_accumulators and not in_sloop and not store_target_is_accumulator:
-                node.temp_var = f"{tensor_name}.to(tl.float16)"
-            else:
-                node.temp_var = tensor_name
+            # For local intermediate tensors, directly reference without reshape.
+            # Accumulators return fp32 — see comment above.
+            node.temp_var = tensor_name
             return ""
 
         offset_expr = self.gen.indexer.generate_index(index_node, tensor_name)
@@ -312,9 +300,25 @@ class MemoryOps:
             # Non-accumulator intermediate tensors: cast fp32 expressions to fp16
             # to match PyTorch behavior and maintain loop-carried variable type consistency
             # Skip if expression already contains fp16 cast (e.g., from accumulator load)
-            if tensor_name not in fp32_tensors and tensor_name not in all_accumulators:
+            #
+            # Exception: shape-only transforms (permute, unsqueeze, squeeze, transpose)
+            # do NOT insert a fp16 cast — they pass through whatever precision their input
+            # has. The cast happens at the actual point of use (global memory store,
+            # tl.dot input via promote_dot_operands). This prevents intermediate fp16
+            # round-trips that would cause overflow in downstream operations like x*x.
+            is_shape_transform = val_node.node_type in (
+                NodeType.PERMUTE3, NodeType.TRANSPOSE,
+                NodeType.SQUEEZE, NodeType.UNSQUEEZE,
+            )
+            if tensor_name not in fp32_tensors and tensor_name not in all_accumulators and not is_shape_transform:
                 if '.to(tl.float16)' not in value_expr:
                     value_expr = f"{value_expr}.to(tl.float16)"
+            elif is_shape_transform:
+                # If this shape transform's source is fp32 (accumulator or fp32 tensor),
+                # mark the destination as fp32 so downstream ops (tl.dot) can cast correctly.
+                all_fp32 = self.state.get_fp32_tensors() | all_accumulators
+                if self.gen.analyzer.uses_fp32_tensors(val_node, all_fp32):
+                    self.state.transform_fp32_tensors.add(tensor_name)
 
             # For intermediate tensors (pre-allocated with tl.zeros), use direct assignment
             # Check if index has any tiles or if it's a simple element access
