@@ -70,7 +70,7 @@ class IRBenchmark:
         self.debug_prefix = debug_prefix
 
         # Setup device
-        self.device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         if self.device.type == 'cuda':
             torch.cuda.set_device(self.device)
         print(f"GPU: {torch.cuda.get_device_name(self.device)}")
