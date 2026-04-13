@@ -26,7 +26,6 @@ class PipelineEntryPoint:
         self.state.kernel_counter = 0
         self.state.generated_kernels = []
         self.state.cross_kernel_tensors = set()
-        self.state.global_fp32_tensors = self.gen.analyzer.identify_fp32_tensors(ast)
 
         if ast.node_type == NodeType.SEQ:
             self.gen.analyzer.identify_cross_kernel_tensors(ast)

@@ -7,8 +7,8 @@ def main():
     parser.add_argument("--m", type=str, default="llama", help="Input model type")
     parser.add_argument("--t", type=str, default="vanilla", help="Benchmark type")
     parser.add_argument("--n", type=int, default=0, help="Case number for IR")
-    parser.add_argument("--d", type=int, default=0, help="Type device number")
-    parser.add_argument("--baseline", nargs="*", default=[], help="List of baselines")
+    parser.add_argument("--d", type=int, default=1, help="Type device number")
+    parser.add_argument("--baseline", nargs="*", default=["trinity"], help="List of baselines")
     parser.add_argument("--print_output", action="store_true")
     args = parser.parse_args()
 
@@ -251,11 +251,13 @@ def main():
 
         tensor_params = getattr(module, 'TENSOR_PARAMS')
         block_params = getattr(module, 'BLOCK_PARAMS')
+        C_div = torch.zeros((H, M, P+M), device=device, dtype=dtype)
+        C_div_perturb = torch.zeros((H, M, P+M), device=device, dtype=dtype)
         tensors = {
             'X': X, 'WQ': WQ, 'WK': WK, 'WV': WV,
             'K_cache': K_cache, 'V_cache': V_cache,
             'O2': O2, 'C': C, 'C_exp': C_exp, 'noise': noise,
-            'C_exp_perturb': C_exp_perturb,
+            'C_exp_perturb': C_exp_perturb, 'C_div': C_div, 'C_div_perturb': C_div_perturb,
             'C_out': C_out, 'C_out1': C_out1, 'C_out2': C_out2,
             'WO': WO, 'attn_O2': attn_O2,
             'WFF1a': WFF1a, 'WFF1b': WFF1b,

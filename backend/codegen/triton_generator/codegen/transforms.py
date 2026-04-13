@@ -418,6 +418,8 @@ class Transforms:
         self.state.temp_counter += 1
 
         # In Triton, use tl.expand_dims
+        # Accumulator fp16 cast is handled at load level (generate_load)
+
         indent = '    ' * self.state.indent_level
         code = child_code
         code += f"{indent}{temp_var} = tl.expand_dims({tensor_expr}, {dim})\n"

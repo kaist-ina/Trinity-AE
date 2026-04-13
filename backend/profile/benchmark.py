@@ -58,6 +58,7 @@ class IRBenchmark:
         warmup_runs: int = 10,
         benchmark_runs: int = 100,
         use_cuda_graph: bool = False,
+        debug_prefix: Optional[str] = None,
     ):
         """Initialize benchmark with shapes.json."""
         self.tensor_types: Dict[str, str] = {}
@@ -66,9 +67,10 @@ class IRBenchmark:
         self.warmup_runs = warmup_runs
         self.benchmark_runs = benchmark_runs
         self.use_cuda_graph = use_cuda_graph
+        self.debug_prefix = debug_prefix
 
         # Setup device
-        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
         if self.device.type == 'cuda':
             torch.cuda.set_device(self.device)
         print(f"GPU: {torch.cuda.get_device_name(self.device)}")
@@ -136,10 +138,6 @@ class IRBenchmark:
         for name, shape in self.tensor_shapes.items():
             self.tensors[name] = self._allocate_tensor(name, torch.float16)
 
-    def _tensor_dtype(self, name: str, fp32_tensor_names: Optional[set[str]] = None) -> torch.dtype:
-        if fp32_tensor_names and name in fp32_tensor_names:
-            return torch.float32
-        return torch.float16
 
     def _allocate_tensor(self, name: str, dtype: torch.dtype) -> torch.Tensor:
         shape = self.tensor_shapes[name]
@@ -157,22 +155,20 @@ class IRBenchmark:
             return torch.zeros(shape, dtype=dtype, device=self.device)
         return torch.randn(shape, dtype=dtype, device=self.device).clamp(-1, 1) * 0.01
 
-    def _ensure_tensor_storage(self, fp32_tensor_names: Optional[set[str]] = None) -> None:
-        fp32_tensor_names = fp32_tensor_names or set()
+    def _ensure_tensor_storage(self) -> None:
         for name, shape in self.tensor_shapes.items():
-            expected_dtype = self._tensor_dtype(name, fp32_tensor_names)
             tensor = self.tensors.get(name)
 
             if tensor is None or tuple(tensor.shape) != tuple(shape):
-                self.tensors[name] = self._allocate_tensor(name, expected_dtype)
+                self.tensors[name] = self._allocate_tensor(name, torch.float16)
                 continue
 
-            if tensor.dtype != expected_dtype:
+            if tensor.dtype != torch.float16:
                 tensor_type = self.tensor_types.get(name, "input")
                 if tensor_type == "input":
-                    self.tensors[name] = tensor.to(dtype=expected_dtype)
+                    self.tensors[name] = tensor.to(dtype=torch.float16)
                 else:
-                    self.tensors[name] = self._allocate_tensor(name, expected_dtype)
+                    self.tensors[name] = self._allocate_tensor(name, torch.float16)
 
     def parse_ir_file(self, file_path: str) -> List[Tuple[int, str]]:
         """Parse the IR expressions file and extract all expressions."""
@@ -440,6 +436,8 @@ class IRBenchmark:
         seed_samples: int,
         local_refine_budget: int = 0,
         local_refine_top_k: int = 1,
+        output_file: Optional[str] = None,
+        shapes_path: Optional[str] = None,
     ) -> List[BenchmarkResult]:
         infos = self.build_expression_infos(expressions)
         if not infos:
@@ -477,6 +475,7 @@ class IRBenchmark:
                 representative_results[info.signature] = result
                 benchmarked_infos.append(info)
                 benchmarked_results.append(result)
+                self._append_result_to_file(result, output_file, shapes_path)
                 pbar.update(1)
                 pbar.set_postfix(valid=sum(1 for r in benchmarked_results if r.error is None))
 
@@ -505,6 +504,7 @@ class IRBenchmark:
                     representative_results[info.signature] = result
                     benchmarked_infos.append(info)
                     benchmarked_results.append(result)
+                    self._append_result_to_file(result, output_file, shapes_path)
                     pbar.update(1)
                     pbar.set_postfix(valid=sum(1 for r in benchmarked_results if r.error is None))
 
@@ -515,18 +515,18 @@ class IRBenchmark:
                 if info.ir_id == representative.ir_id:
                     results.append(representative)
                 else:
-                    results.append(
-                        BenchmarkResult(
-                            ir_id=info.ir_id,
-                            ir_expression=info.ir_expression,
-                            execution_time=representative.execution_time,
-                            error=representative.error,
-                            benchmarked=False,
-                            source_ir_id=representative.ir_id,
-                            predicted_execution_time=representative.execution_time,
-                            selection_reason="dedup",
-                        )
+                    dedup_result = BenchmarkResult(
+                        ir_id=info.ir_id,
+                        ir_expression=info.ir_expression,
+                        execution_time=representative.execution_time,
+                        error=representative.error,
+                        benchmarked=False,
+                        source_ir_id=representative.ir_id,
+                        predicted_execution_time=representative.execution_time,
+                        selection_reason="dedup",
                     )
+                    results.append(dedup_result)
+                    self._append_result_to_file(dedup_result, output_file, shapes_path)
                 continue
 
             nearest_info, nearest_result, predicted, uncertainty = self._nearest_benchmarked_result(
@@ -535,18 +535,18 @@ class IRBenchmark:
                 benchmarked_results,
             )
             predicted_error = nearest_result.error if nearest_result is not None else "No benchmark representative"
-            results.append(
-                BenchmarkResult(
-                    ir_id=info.ir_id,
-                    ir_expression=info.ir_expression,
-                    execution_time=predicted if predicted != float("inf") else float("inf"),
-                    error=predicted_error,
-                    benchmarked=False,
-                    source_ir_id=nearest_info.ir_id if nearest_info is not None else None,
-                    predicted_execution_time=predicted if predicted != float("inf") else None,
-                    selection_reason=f"predicted_nn_uncertainty={uncertainty:.4f}",
-                )
+            predicted_result = BenchmarkResult(
+                ir_id=info.ir_id,
+                ir_expression=info.ir_expression,
+                execution_time=predicted if predicted != float("inf") else float("inf"),
+                error=predicted_error,
+                benchmarked=False,
+                source_ir_id=nearest_info.ir_id if nearest_info is not None else None,
+                predicted_execution_time=predicted if predicted != float("inf") else None,
+                selection_reason=f"predicted_nn_uncertainty={uncertainty:.4f}",
             )
+            results.append(predicted_result)
+            self._append_result_to_file(predicted_result, output_file, shapes_path)
 
         results.sort(key=lambda item: item.ir_id)
         return results
@@ -624,13 +624,12 @@ class IRBenchmark:
             benchmark_runs = self.benchmark_runs if benchmark_runs is None else benchmark_runs
             # Get metadata and forward function
             tensor_params = getattr(kernel_module, 'TENSOR_PARAMS', [])
-            fp32_tensor_params = set(getattr(kernel_module, 'FP32_TENSOR_PARAMS', []))
             kernel_fn = kernel_module.forward
-            
+
             if not tensor_params:
                 raise ValueError("No TENSOR_PARAMS found in kernel module.")
 
-            self._ensure_tensor_storage(fp32_tensor_params)
+            self._ensure_tensor_storage()
 
             # Reset output tensors before each benchmark
             for name in tensor_params:
@@ -647,8 +646,7 @@ class IRBenchmark:
                 else:
                     # Create zero tensor if not exists (for intermediate tensors)
                     if param in self.tensor_shapes:
-                        dtype = self._tensor_dtype(param, fp32_tensor_params)
-                        tensor = self._allocate_tensor(param, dtype)
+                        tensor = self._allocate_tensor(param, torch.float16)
                         self.tensors[param] = tensor
                         args.append(tensor)
                     else:
@@ -729,9 +727,14 @@ class IRBenchmark:
             
         except Exception as e:
             # Save kernel code for debugging
-            debug_dir = os.path.join(os.path.dirname(__file__), "debug")
+            if self.debug_prefix:
+                debug_dir = os.path.join(os.path.dirname(__file__), "debug", self.debug_prefix)
+                debug_filename = f"{self.debug_prefix}_{ir_id}.py"
+            else:
+                debug_dir = os.path.join(os.path.dirname(__file__), "debug")
+                debug_filename = f"kernel_{ir_id}.py"
             os.makedirs(debug_dir, exist_ok=True)
-            debug_path = os.path.join(debug_dir, f"kernel_{ir_id}.py")
+            debug_path = os.path.join(debug_dir, debug_filename)
             try:
                 with open(debug_path, "w") as f:
                     f.write(f"# IR ID: {ir_id}\n")
@@ -746,6 +749,36 @@ class IRBenchmark:
             self.cleanup_gpu()
             return BenchmarkResult(ir_id, ir_expr, float('inf'), str(e))
 
+    def _append_result_to_file(
+        self,
+        result: BenchmarkResult,
+        output_file: Optional[str],
+        shapes_path: Optional[str] = None,
+    ) -> None:
+        """Append a single benchmark result to the JSON output file."""
+        if output_file is None:
+            return
+        try:
+            with open(output_file, 'r') as f:
+                existing_data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            existing_data = []
+
+        existing_data.append({
+            'ir_id': result.ir_id,
+            'ir_expression': result.ir_expression,
+            'execution_time_ms': result.execution_time,
+            'shapes_path': shapes_path,
+            'error': result.error,
+            'benchmarked': result.benchmarked,
+            'source_ir_id': result.source_ir_id,
+            'predicted_execution_time_ms': result.predicted_execution_time,
+            'selection_reason': result.selection_reason,
+        })
+
+        with open(output_file, 'w') as f:
+            json.dump(existing_data, f, indent=2)
+
     def run_all_benchmarks(
         self,
         ir_file: str,
@@ -756,22 +789,24 @@ class IRBenchmark:
         seed_samples: int = 16,
         local_refine_budget: int = 0,
         local_refine_top_k: int = 1,
+        output_file: Optional[str] = None,
+        shapes_path: Optional[str] = None,
     ) -> List[BenchmarkResult]:
         """Run benchmarks for all IR expressions in the file."""
         # Parse IR expressions
         expressions = self.parse_ir_file(ir_file)
-        
+
         # Filter by ir_id if min_expressions is provided
         if min_expressions is not None:
             # Find expressions with ir_id >= min_expressions
             filtered_expressions = [(ir_id, expr) for ir_id, expr in expressions if ir_id >= min_expressions]
-            
+
             # If num is specified, take only the first 'num' expressions
             if num:
                 filtered_expressions = filtered_expressions[:num]
-            
+
             expressions = filtered_expressions
-        
+
         print(f"Found {len(expressions)} IR expressions to benchmark")
         if optimized:
             return self.run_optimized_benchmarks(
@@ -780,18 +815,21 @@ class IRBenchmark:
                 seed_samples=seed_samples,
                 local_refine_budget=local_refine_budget,
                 local_refine_top_k=local_refine_top_k,
+                output_file=output_file,
+                shapes_path=shapes_path,
             )
-        
+
         results = []
         # tqdm progress bar with update every 10 items
         with tqdm(total=len(expressions), desc="Benchmarking", unit="IR") as pbar:
             for i, (ir_id, ir_expr) in enumerate(expressions):
                 result = self.run_single_benchmark(ir_id, ir_expr)
                 results.append(result)
-                
+                self._append_result_to_file(result, output_file, shapes_path)
+
                 # Update progress bar
                 pbar.update(1)
-                
+
                 # Update postfix with current status every 10 items
                 if (i + 1) % 10 == 0:
                     valid_so_far = sum(1 for r in results if r.error is None)
@@ -893,6 +931,7 @@ def run_comprehensive_benchmark(
     warmup_runs=10,
     benchmark_runs=100,
     use_cuda_graph=False,
+    debug_prefix=None,
 ):
     """Run benchmarks for shapes.json."""
     all_results = []
@@ -915,11 +954,13 @@ def run_comprehensive_benchmark(
         warmup_runs=warmup_runs,
         benchmark_runs=benchmark_runs,
         use_cuda_graph=use_cuda_graph,
+        debug_prefix=debug_prefix,
     )
     benchmark_instances.append(benchmark)
     
     try:
         # Run benchmarks for this tensor configuration
+        # Results are saved to output_file incrementally per case
         results = benchmark.run_all_benchmarks(
             ir_file,
             min_expressions=start_expressions,
@@ -929,19 +970,18 @@ def run_comprehensive_benchmark(
             seed_samples=seed_samples,
             local_refine_budget=local_refine_budget,
             local_refine_top_k=local_refine_top_k,
+            output_file=output_file,
+            shapes_path=shapes_path,
         )
-        
+
         # Store results with configuration info
         config_results = {
             'shapes_path': shapes_path,
             'results': results
         }
         all_results.append(config_results)
-        
-        # Save results incrementally
-        save_incremental_results(config_results, output_file)
         print("  Saved results")
-        
+
     except Exception as e:
         print(f"  Error in configuration: {str(e)}")
         # Save error information
@@ -1040,7 +1080,9 @@ def main():
     parser.add_argument('--end', action='store_true', help="Run from start ID to the last test case")
     parser.add_argument('--topk', type=int, default=TOP_K, help="Number of top kernels to report")
     parser.add_argument('--all', action='store_true', help="Run all configurations comprehensively")
-    parser.add_argument('--shapes', type=str, required=True, help="Path to shapes.json for tensor shapes")
+    parser.add_argument('--shapes', type=str, help="Path to shapes.json for tensor shapes")
+    parser.add_argument('--type', '-t', type=str, dest='type', help="Benchmark type (e.g. roco, vanilla, ffn)")
+    parser.add_argument('--model', '-m', type=str, dest='model', help="Model name (e.g. llama)")
     parser.add_argument('--optimized', action='store_true', help="Benchmark only representative IRs and predict nearby candidates")
     parser.add_argument('--max-benchmarks', type=int, default=64, help="Maximum number of representative IRs to benchmark")
     parser.add_argument('--seed-samples', type=int, default=16, help="Number of diverse seed representatives")
@@ -1051,12 +1093,28 @@ def main():
     parser.add_argument('--cuda-graph', action='store_true', help="Use CUDA graph capture/replay for benchmarking")
 
     args = parser.parse_args()
-    
+
+    # Derive ir/shapes paths from --type and --model if not explicitly given
+    debug_prefix = None
+    if args.type and args.model:
+        debug_prefix = f"{args.type}_{args.model}"
+        if args.ir is None:
+            args.ir = f"evaluation/{args.type}/{args.type}_{args.model}_cost6_kern1.txt"
+        if args.shapes is None:
+            args.shapes = f"profile/shapes/{args.type}_{args.model}.json"
+
+    if args.ir is None:
+        print("Error: --ir is required unless both --type and --model are specified.")
+        return
+    if args.shapes is None:
+        print("Error: --shapes is required unless both --type and --model are specified.")
+        return
+
     # Validate conflicting arguments
     if args.end and args.num != NUM_EXPRESSIONS:
         print("Error: Cannot use --end and --num together. Use either --num or --end, not both.")
         return
-    
+
     total_expressions = 0
     if args.all:
         with open(args.ir, 'r') as f:
@@ -1089,6 +1147,7 @@ def main():
         warmup_runs=args.warmup_runs,
         benchmark_runs=args.benchmark_runs,
         use_cuda_graph=args.cuda_graph,
+        debug_prefix=debug_prefix,
     )
     
     print(f"\nAll results saved to: {args.output}")

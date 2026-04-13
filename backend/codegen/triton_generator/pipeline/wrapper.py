@@ -20,15 +20,8 @@ class WrapperPipeline:
             if tensor_name not in all_local_intermediate_tensors:
                 forward_params.append(tensor_name)
 
-        fp32_forward_params = [
-            tensor_name
-            for tensor_name in forward_params
-            if tensor_name in getattr(self.state, "global_fp32_tensors", set())
-        ]
-
         code = "# Metadata for benchmark.py\n"
         code += f"TENSOR_PARAMS = {forward_params}\n"
-        code += f"FP32_TENSOR_PARAMS = {fp32_forward_params}\n"
         code += f"BLOCK_PARAMS = {sorted(list(all_block_params))}\n\n"
 
         code += "def forward("
