@@ -94,5 +94,5 @@ if __name__ == "__main__":
     V_cache = torch.randn((H, P + M, D))
 
     model = Roco(M, N, D, P, K_cache, V_cache)
-    result = trinity.optimize(model, X, basename="roco", skip_frontend=True, verbose=True)
+    result = trinity.optimize(model, X, basename="roco", backend_max_benchmarks=9999, skip_frontend=True, device=1 ,verbose=True, backend_timeout_s=86400)
 

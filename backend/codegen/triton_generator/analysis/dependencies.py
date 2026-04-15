@@ -203,29 +203,57 @@ class DependencyAnalysis:
         return memory_tensors
 
     def identify_sloop_intermediate_tensors(self, ast: ASTNode) -> set:
-        """Identify intermediate tensors that are defined inside sloop."""
-        sloop_intermediate_tensors = set()
+        """Identify intermediate tensors that escape their defining sloop.
 
-        def traverse(node: ASTNode, in_sloop: bool = False):
+        A tensor needs pre-allocation (tl.zeros) if it is stored inside a sloop
+        and loaded outside that same sloop — whether in a different sloop or
+        outside all sloops. Tensors only used within the same sloop iteration
+        (e.g., shape transforms consumed immediately) are excluded.
+        """
+        # tensor -> set of sloop IDs where it is stored
+        store_scopes = {}
+        # tensor -> set of sloop IDs where it is loaded (-1 = outside all sloops)
+        load_scopes = {}
+        sloop_counter = [0]
+
+        def traverse(node: ASTNode, current_sloop_id: int = -1):
             if node.node_type == NodeType.SLOOP:
+                sloop_counter[0] += 1
+                new_id = sloop_counter[0]
                 for child in node.children:
                     if isinstance(child, ASTNode):
-                        traverse(child, in_sloop=True)
-            elif node.node_type == NodeType.STORE and in_sloop:
+                        traverse(child, new_id)
+            elif node.node_type == NodeType.STORE:
                 tensor_node = node.children[0]
-                if tensor_node.node_type in [NodeType.INPUT, NodeType.OUTPUT, NodeType.TENSOR]:
+                if current_sloop_id != -1 and tensor_node.node_type in [
+                    NodeType.INPUT, NodeType.OUTPUT, NodeType.TENSOR
+                ]:
                     for child in tensor_node.children:
                         if child.node_type == NodeType.VAR:
-                            tensor_name = child.value
-                            if tensor_name in self.state.intermediate_tensors:
-                                sloop_intermediate_tensors.add(tensor_name)
+                            store_scopes.setdefault(child.value, set()).add(current_sloop_id)
                 for child in node.children:
                     if isinstance(child, ASTNode):
-                        traverse(child, in_sloop)
+                        traverse(child, current_sloop_id)
+            elif node.node_type == NodeType.LOAD:
+                tensor_node = node.children[0]
+                if tensor_node.node_type in [
+                    NodeType.INPUT, NodeType.OUTPUT, NodeType.TENSOR
+                ]:
+                    for child in tensor_node.children:
+                        if child.node_type == NodeType.VAR:
+                            load_scopes.setdefault(child.value, set()).add(current_sloop_id)
             else:
                 for child in node.children:
                     if isinstance(child, ASTNode):
-                        traverse(child, in_sloop)
+                        traverse(child, current_sloop_id)
 
         traverse(ast)
-        return sloop_intermediate_tensors
+
+        escaped = set()
+        for tensor, stored_in in store_scopes.items():
+            loaded_in = load_scopes.get(tensor, set())
+            # If loaded anywhere outside the sloop(s) it was stored in
+            if loaded_in - stored_in:
+                escaped.add(tensor)
+
+        return escaped & self.state.intermediate_tensors
