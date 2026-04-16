@@ -227,7 +227,7 @@ fn llama_extract_rmsnorm_qkv_attn_expressions() {
     let mut runner = run_until_saturated(
         expr,
         rules(),
-        8,
+        10,
     );
 
     let expr_path = get_expressions_path();

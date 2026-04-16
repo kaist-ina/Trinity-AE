@@ -131,8 +131,8 @@ with open(case_file, "r") as f:
     input_code = f.read().strip()
 
 formatted_output = format_lisp_with_rules(input_code)
-
-with open(case_file, "w") as f:
-    f.write(formatted_output)
+print(formatted_output)
+# with open(case_file, "w") as f:
+#     f.write(formatted_output)
 
 print(f"Formatted code: {case_file}")

@@ -143,7 +143,7 @@ fn llama_extract_ffn_expressions() {
 (seq
     (loop 0 16384 tile_p p
         (store (tensor FF1b_silu)
-            (x
+            (*
                 (load (tensor FF1b) (index (fulltile) (tile p)))
                 (sigmoid
                     (load (tensor FF1b) (index (fulltile) (tile p)))
@@ -155,7 +155,7 @@ fn llama_extract_ffn_expressions() {
 (seq
     (loop 0 16384 tile_p p
         (store (tensor FF1)
-            (x
+            (*
                 (load (tensor FF1a) (index (fulltile) (tile p)))
                 (load (tensor FF1b_silu) (index (fulltile) (tile p)))
             )
@@ -337,7 +337,7 @@ fn falcon_extract_ffn_expressions() {
 (seq
     (loop 0 18176 tile_p p
         (store (tensor FF1b_silu)
-            (x
+            (*
                 (load (tensor FF1b) (index (fulltile) (tile p)))
                 (sigmoid
                     (load (tensor FF1b) (index (fulltile) (tile p)))
@@ -349,7 +349,7 @@ fn falcon_extract_ffn_expressions() {
 (seq
     (loop 0 18176 tile_p p
         (store (tensor FF1)
-            (x
+            (*
                 (load (tensor FF1a) (index (fulltile) (tile p)))
                 (load (tensor FF1b_silu) (index (fulltile) (tile p)))
             )

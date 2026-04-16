@@ -271,79 +271,79 @@ pub fn rules() -> Vec<Rewrite<TileLang, LoopAnalysis>> {
             )
         ),
         // Index bug. b의 idx가 matmul을 하기 전과 후에 달라진다.
-        // rw!("loop-factor-matmul";
-        //     "(loop 0 ?n ?tile_n ?loop_var (store ?b (+ (* (load ?b ?idx) ?accm) (@ ?val1 ?val2)) ?idx))" =>
-        //     "(seq (loop 0 ?n ?tile_n ?loop_var (store ?b (+ (* (load ?b ?idx) ?accm) ?val1) ?idx))
-        //           (store ?b (* (load ?b ?idx) ?val2) ?idx))"
-        //     if and_all!(
-        //         no_dependency_with_loopvar(var("?val2"), var("?loop_var")),
-        //         is_not_one(var("?val2"))
-        //     )
-        // ),
-        // rw!("loop-factor-matmul-tail";
-        //     "(seq (loop 0 ?n ?tile_n ?loop_var (store ?b (+ (* (load ?b ?idx) ?accm) (@ ?val1 ?val2)) ?idx)) ?others)" =>
-        //     "(seq (loop 0 ?n ?tile_n ?loop_var (store ?b (+ (* (load ?b ?idx) ?accm) ?val1) ?idx))
-        //           (seq (store ?b (* (load ?b ?idx) ?val2) ?idx) ?others))"
-        //     if and_all!(
-        //         no_dependency_with_loopvar(var("?val2"), var("?loop_var")),
-        //         is_not_one(var("?val2"))
-        //     )
-        // ),
+        rw!("loop-factor-matmul";
+            "(loop 0 ?n ?tile_n ?loop_var (store ?b (+ (* (load ?b ?idx) ?accm) (@ ?val1 ?val2)) ?idx))" =>
+            "(seq (loop 0 ?n ?tile_n ?loop_var (store ?b (+ (* (load ?b ?idx) ?accm) ?val1) ?idx))
+                  (store ?b (* (load ?b ?idx) ?val2) ?idx))"
+            if and_all!(
+                no_dependency_with_loopvar(var("?val2"), var("?loop_var")),
+                is_not_one(var("?val2"))
+            )
+        ),
+        rw!("loop-factor-matmul-tail";
+            "(seq (loop 0 ?n ?tile_n ?loop_var (store ?b (+ (* (load ?b ?idx) ?accm) (@ ?val1 ?val2)) ?idx)) ?others)" =>
+            "(seq (loop 0 ?n ?tile_n ?loop_var (store ?b (+ (* (load ?b ?idx) ?accm) ?val1) ?idx))
+                  (seq (store ?b (* (load ?b ?idx) ?val2) ?idx) ?others))"
+            if and_all!(
+                no_dependency_with_loopvar(var("?val2"), var("?loop_var")),
+                is_not_one(var("?val2"))
+            )
+        ),
 
-        // rw!("loop-dist-matmul-tail";
-        //     "(seq (loop 0 ?n ?tile_n ?loop_var (store ?b (+ (* (load ?b ?idx) ?accm) ?val1) ?idx))
-        //      (seq (store ?c (* (load ?b ?idx) ?val2) ?idx2) ?others))" =>
-        //     "(seq (loop 0 ?n ?tile_n ?loop_var (store ?c (+ (* (load ?c ?idx2) ?accm) (@ ?val1 ?val2)) ?idx2)) ?others)"
-        //     if and_all!(
-        //         no_dependency_with_loopvar(var("?val2"), var("?loop_var")),
-        //         is_not_one(var("?val2"))
-        //     )
-        // ),
-        // rw!("loop-dist-matmul";
-        //     "(seq (loop 0 ?n ?tile_n ?loop_var (store ?b (+ (* (load ?b ?idx) ?accm) ?val1) ?idx))
-        //       (store ?c (* (load ?b ?idx) ?val2) ?idx2))" =>
-        //     "(loop 0 ?n ?tile_n ?loop_var (store ?c (+ (* (load ?c ?idx2) ?accm) (@ ?val1 ?val2)) ?idx2))"
-        //     if and_all!(
-        //         no_dependency_with_loopvar(var("?val2"), var("?loop_var")),
-        //         is_not_one(var("?val2"))
-        //     )
-        // ),
-        // rw!("loop-dist-div-tail";
-        //     "(seq (loop 0 ?n ?tile_n ?loop_var (store ?b (+ (* (load ?b ?idx) ?accm) ?val1) ?idx))
-        //      (seq (store ?c (/ (load ?b ?idx) ?val2) ?idx) ?others))" =>
-        //     "(seq (loop 0 ?n ?tile_n ?loop_var (store ?c (+ (* (load ?c ?idx) ?accm) (/ ?val1 ?val2)) ?idx)) ?others)"
-        //     if and_all!(
-        //         no_dependency_with_loopvar(var("?val2"), var("?loop_var")),
-        //         is_not_one(var("?val2"))
-        //     )
-        // ),
-        // rw!("loop-dist-div";
-        //     "(seq (loop 0 ?n ?tile_n ?loop_var (store ?b (+ (* (load ?b ?idx) ?accm) ?val1) ?idx))
-        //       (store ?c (/ (load ?b ?idx) ?val2) ?idx))" =>
-        //     "(loop 0 ?n ?tile_n ?loop_var (store ?c (+ (* (load ?c ?idx) ?accm) (/ ?val1 ?val2)) ?idx))"
-        //     if and_all!(
-        //         no_dependency_with_loopvar(var("?val2"), var("?loop_var")),
-        //         is_not_one(var("?val2"))
-        //     )
-        // ),
-        // rw!("loop-dist-mul-tail";
-        //     "(seq (loop 0 ?n ?tile_n ?loop_var (store ?b (+ (* (load ?b ?idx) ?accm) ?val1) ?idx))
-        //      (seq (store ?c (* (load ?b ?idx) ?val2) ?idx) ?others))" =>
-        //     "(seq (loop 0 ?n ?tile_n ?loop_var (store ?c (+ (* (load ?c ?idx) ?accm) (* ?val1 ?val2)) ?idx)) ?others)"
-        //     if and_all!(
-        //         no_dependency_with_loopvar(var("?val2"), var("?loop_var")),
-        //         is_not_one(var("?val2")),
-        //     )
-        // ),
-        // rw!("loop-dist-mul";
-        //     "(seq (loop 0 ?n ?tile_n ?loop_var (store ?b (+ (* (load ?b ?idx) ?accm) ?val1) ?idx))
-        //       (store ?c (* (load ?b ?idx) ?val2) ?idx))" =>
-        //     "(loop 0 ?n ?tile_n ?loop_var (store ?c (+ (* (load ?c ?idx) ?accm) (* ?val1 ?val2)) ?idx))"
-        //     if and_all!(
-        //         no_dependency_with_loopvar(var("?val2"), var("?loop_var")),
-        //         is_not_one(var("?val2")),
-        //     )
-        // ),
+        rw!("loop-dist-matmul-tail";
+            "(seq (loop 0 ?n ?tile_n ?loop_var (store ?b (+ (* (load ?b ?idx) ?accm) ?val1) ?idx))
+             (seq (store ?c (* (load ?b ?idx) ?val2) ?idx2) ?others))" =>
+            "(seq (loop 0 ?n ?tile_n ?loop_var (store ?c (+ (* (load ?c ?idx2) ?accm) (@ ?val1 ?val2)) ?idx2)) ?others)"
+            if and_all!(
+                no_dependency_with_loopvar(var("?val2"), var("?loop_var")),
+                is_not_one(var("?val2"))
+            )
+        ),
+        rw!("loop-dist-matmul";
+            "(seq (loop 0 ?n ?tile_n ?loop_var (store ?b (+ (* (load ?b ?idx) ?accm) ?val1) ?idx))
+              (store ?c (* (load ?b ?idx) ?val2) ?idx2))" =>
+            "(loop 0 ?n ?tile_n ?loop_var (store ?c (+ (* (load ?c ?idx2) ?accm) (@ ?val1 ?val2)) ?idx2))"
+            if and_all!(
+                no_dependency_with_loopvar(var("?val2"), var("?loop_var")),
+                is_not_one(var("?val2"))
+            )
+        ),
+        rw!("loop-dist-div-tail";
+            "(seq (loop 0 ?n ?tile_n ?loop_var (store ?b (+ (* (load ?b ?idx) ?accm) ?val1) ?idx))
+             (seq (store ?c (/ (load ?b ?idx) ?val2) ?idx) ?others))" =>
+            "(seq (loop 0 ?n ?tile_n ?loop_var (store ?c (+ (* (load ?c ?idx) ?accm) (/ ?val1 ?val2)) ?idx)) ?others)"
+            if and_all!(
+                no_dependency_with_loopvar(var("?val2"), var("?loop_var")),
+                is_not_one(var("?val2"))
+            )
+        ),
+        rw!("loop-dist-div";
+            "(seq (loop 0 ?n ?tile_n ?loop_var (store ?b (+ (* (load ?b ?idx) ?accm) ?val1) ?idx))
+              (store ?c (/ (load ?b ?idx) ?val2) ?idx))" =>
+            "(loop 0 ?n ?tile_n ?loop_var (store ?c (+ (* (load ?c ?idx) ?accm) (/ ?val1 ?val2)) ?idx))"
+            if and_all!(
+                no_dependency_with_loopvar(var("?val2"), var("?loop_var")),
+                is_not_one(var("?val2"))
+            )
+        ),
+        rw!("loop-dist-mul-tail";
+            "(seq (loop 0 ?n ?tile_n ?loop_var (store ?b (+ (* (load ?b ?idx) ?accm) ?val1) ?idx))
+             (seq (store ?c (* (load ?b ?idx) ?val2) ?idx) ?others))" =>
+            "(seq (loop 0 ?n ?tile_n ?loop_var (store ?c (+ (* (load ?c ?idx) ?accm) (* ?val1 ?val2)) ?idx)) ?others)"
+            if and_all!(
+                no_dependency_with_loopvar(var("?val2"), var("?loop_var")),
+                is_not_one(var("?val2")),
+            )
+        ),
+        rw!("loop-dist-mul";
+            "(seq (loop 0 ?n ?tile_n ?loop_var (store ?b (+ (* (load ?b ?idx) ?accm) ?val1) ?idx))
+              (store ?c (* (load ?b ?idx) ?val2) ?idx))" =>
+            "(loop 0 ?n ?tile_n ?loop_var (store ?c (+ (* (load ?c ?idx) ?accm) (* ?val1 ?val2)) ?idx))"
+            if and_all!(
+                no_dependency_with_loopvar(var("?val2"), var("?loop_var")),
+                is_not_one(var("?val2")),
+            )
+        ),
 
         // rw!("loop-split";
         //     "(loop 0 ?end ?tile ?loop_var (store (input ?a) (+ (* (load (input ?a) ?idx) 1) ?body) ?idx))" =>
