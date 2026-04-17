@@ -20,10 +20,6 @@ class QKNormAttn(nn.Module):
         self.device = device
         self.dtype = dtype
 
-        # self.q_proj = nn.Linear(self.N, self.N, bias=False)
-        # self.k_proj = nn.Linear(self.N, self.N, bias=False)
-        # self.v_proj = nn.Linear(self.N, self.N, bias=False)
-
         self.q_proj = torch.randn(self.N, self.N, device=device, dtype=dtype)
         self.k_proj = torch.randn(self.N, self.N, device=device, dtype=dtype)
         self.v_proj = torch.randn(self.N, self.N, device=device, dtype=dtype)
@@ -32,9 +28,6 @@ class QKNormAttn(nn.Module):
         self.register_buffer("cache_V", cache_V.to(device))
 
     def forward(self, X):
-        # q1 = self.q_proj(X)
-        # k1 = self.k_proj(X)
-        # v1 = self.v_proj(X)
         q = torch.matmul(X, self.q_proj)
         k = torch.matmul(X, self.k_proj)
         v = torch.matmul(X, self.v_proj)
@@ -53,9 +46,6 @@ class QKNormAttn(nn.Module):
         q_norm = q / torch.sqrt(torch.sum(q * q, dim=-1, keepdim=True) / self.D)
         k_norm = k / torch.sqrt(torch.sum(k * k, dim=-1, keepdim=True) / self.D)
 
-        # q_norm = q / torch.sqrt((q * q).sum(dim=2) / self.D).unsqueeze(2)
-        # k_norm = k / torch.sqrt((k * k).sum(dim=2) / self.D).unsqueeze(2)
-
         self.cache_K[:, self.P:self.P+self.M, :] = k_norm
         self.cache_V[:, self.P:self.P+self.M, :] = v
         cache_K_new = self.cache_K
@@ -67,7 +57,6 @@ class QKNormAttn(nn.Module):
         scores = torch.matmul(q_norm, cache_K_new.transpose(1, 2))
         
         # Softmax - using torch.softmax for TVM compatibility
-        # weights = torch.softmax(scores, dim=-1)
         scores_exp = torch.exp(scores)
         scores_sum = torch.sum(scores_exp, dim=-1, keepdim=True)
         weights = scores_exp / scores_sum
@@ -93,4 +82,4 @@ if __name__ == "__main__":
     V_cache = torch.randn((H, P+M, D))
 
     model = QKNormAttn(M, H, D, P, K_cache, V_cache)
-    result = trinity.optimize(model, X, basename="qknorm", verbose=True, skip_frontend=True, backend_max_benchmarks=99999)
+    result = trinity.optimize(model, X, basename="qknorm", verbose=True, skip_frontend=False, backend_max_benchmarks=512)

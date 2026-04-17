@@ -16,7 +16,7 @@ class OptimizeConfig:
 
     basename: Optional[str] = None
     cost: int = 6
-    kern: int = 2
+    kern: int = 1
     output_dir: Union[str, Path] = _PROJECT_ROOT / "trinity_output"
     device: int = 0
     inline_shape_op: bool = True
@@ -36,8 +36,8 @@ class OptimizeConfig:
     backend_seed_samples: int = 16
     backend_local_refine_budget: int = 16
     backend_local_refine_top_k: int = 1
-    backend_warmup_runs: int = 3
-    backend_benchmark_runs: int = 20
+    backend_warmup_runs: int = 10
+    backend_benchmark_runs: int = 100
     backend_cuda_graph: bool = False
     shape_vars: Optional[dict] = None  # {pytorch_name: [sym, sym, ...]} for axis naming
 
