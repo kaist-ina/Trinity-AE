@@ -19,10 +19,6 @@ class Vanilla(nn.Module):
         self.device = device
         self.dtype = dtype
 
-        # self.q_proj = nn.Linear(N, N, bias=False)
-        # self.k_proj = nn.Linear(N, N, bias=False)
-        # self.v_proj = nn.Linear(N, N, bias=False)
-
         self.q_proj = torch.randn(N, N, device=device, dtype=dtype)
         self.k_proj = torch.randn(N, N, device=device, dtype=dtype)
         self.v_proj = torch.randn(N, N, device=device, dtype=dtype)
@@ -32,15 +28,9 @@ class Vanilla(nn.Module):
         self.register_buffer('cache_V', cache_V.to(device))
     
     def forward(self, X):
-        # X shape: (M, N) where M=16 (seq), N=4096 (hidden)
-        # Project Q, K, V separately
-        # q = self.q_proj(X)
-        # k = self.k_proj(X)
-        # v = self.v_proj(X)
         q = torch.matmul(X, self.q_proj)
         k = torch.matmul(X, self.k_proj)
         v = torch.matmul(X, self.v_proj)
-
     
         # Reshape to multi-head
         q = q.view(self.M, self.H, self.D)  # (M, H, D)
@@ -53,8 +43,6 @@ class Vanilla(nn.Module):
         v = v.transpose(0, 1)  # (H, M, D)
 
         # Update cache - using slicing to avoid in-place operation issues
-        # cache_K_new = self.cache_K.clone()
-        # cache_V_new = self.cache_V.clone()
         self.cache_K[:, self.P:self.P+self.M, :] = k
         self.cache_V[:, self.P:self.P+self.M, :] = v
         cache_K_new = self.cache_K
@@ -66,7 +54,6 @@ class Vanilla(nn.Module):
         scores = torch.matmul(q, cache_K_new.transpose(1, 2))
         
         # Softmax - using torch.softmax for TVM compatibility
-        # weights = torch.softmax(scores, dim=-1)
         scores_exp = torch.exp(scores)
         scores_sum = torch.sum(scores_exp, dim=-1, keepdim=True)
         weights = scores_exp / scores_sum
@@ -90,4 +77,4 @@ if __name__ == "__main__":
     V_cache = torch.randn((H, P + M, D))
 
     model = Vanilla(M, N, D, P, K_cache, V_cache)
-    result = trinity.optimize(model, X, basename="vanilla", skip_frontend=False, verbose=True)
+    result = trinity.optimize(model, X, basename="vanilla", skip_frontend=False, verbose=True, backend_max_benchmarks=512)

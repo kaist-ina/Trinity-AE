@@ -20,10 +20,6 @@ class PreNormAttn(nn.Module):
         self.device = device
         self.dtype = dtype
 
-        # self.q_proj = nn.Linear(self.N, self.N, bias=False)
-        # self.k_proj = nn.Linear(self.N, self.N, bias=False)
-        # self.v_proj = nn.Linear(self.N, self.N, bias=False)
-
         self.q_proj = torch.randn(self.N, self.N, device=device, dtype=dtype)
         self.k_proj = torch.randn(self.N, self.N, device=device, dtype=dtype)
         self.v_proj = torch.randn(self.N, self.N, device=device, dtype=dtype)
@@ -32,13 +28,6 @@ class PreNormAttn(nn.Module):
         self.register_buffer("cache_V", cache_V.to(device))
 
     def forward(self, X):
-        # x2 = (X * X).sum(dim=1)
-        # x_norm = X / torch.sqrt(x2 / self.N).unsqueeze(1)
-
-        # q1 = self.q_proj(x_norm)
-        # k1 = self.k_proj(x_norm)
-        # v1 = self.v_proj(x_norm)
-        
         X2 = torch.sum(X*X, dim=-1, keepdim=True)
         X_norm = X / torch.sqrt(X2 / self.N)
         q = torch.matmul(X_norm, self.q_proj)
@@ -56,21 +45,15 @@ class PreNormAttn(nn.Module):
         k = k.transpose(0, 1)  # (H, M, D)
         v = v.transpose(0, 1)  # (H, M, D)
 
-        # Update cache - using slicing to avoid in-place operation issues
-        # cache_K_new = self.cache_K.clone()
-        # cache_V_new = self.cache_V.clone()
         self.cache_K[:, self.P:self.P+self.M, :] = k
         self.cache_V[:, self.P:self.P+self.M, :] = v
         cache_K_new = self.cache_K
         cache_V_new = self.cache_V
 
-        # Transpose q to (H, M, D)
-
         # Attention scores: (H, M, D) @ (H, D, P+M) -> (H, M, P+M)
         scores = torch.matmul(q, cache_K_new.transpose(1, 2))
         
         # Softmax - using torch.softmax for TVM compatibility
-        # weights = torch.softmax(scores, dim=-1)
         scores_exp = torch.exp(scores)
         scores_sum = torch.sum(scores_exp, dim=-1, keepdim=True)
         weights = scores_exp / scores_sum
@@ -102,4 +85,4 @@ if __name__ == "__main__":
             "q_proj":  ["K", "N"],
             "k_proj":  ["K", "N"],
             "v_proj":  ["K", "N"],
-        })
+        }, backend_max_benchmarks=512)
