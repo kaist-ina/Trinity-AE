@@ -59,6 +59,7 @@ class IRBenchmark:
         benchmark_runs: int = 100,
         use_cuda_graph: bool = False,
         debug_prefix: Optional[str] = None,
+        device: Optional[int] = 0,
     ):
         """Initialize benchmark with shapes.json."""
         self.tensor_types: Dict[str, str] = {}
@@ -70,7 +71,7 @@ class IRBenchmark:
         self.debug_prefix = debug_prefix
 
         # Setup device
-        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device(f'cuda:{device}' if torch.cuda.is_available() else 'cpu')
         if self.device.type == 'cuda':
             torch.cuda.set_device(self.device)
         print(f"GPU: {torch.cuda.get_device_name(self.device)}")
@@ -932,6 +933,7 @@ def run_comprehensive_benchmark(
     benchmark_runs=100,
     use_cuda_graph=False,
     debug_prefix=None,
+    device = 0,
 ):
     """Run benchmarks for shapes.json."""
     all_results = []
@@ -955,6 +957,7 @@ def run_comprehensive_benchmark(
         benchmark_runs=benchmark_runs,
         use_cuda_graph=use_cuda_graph,
         debug_prefix=debug_prefix,
+        device=device,
     )
     benchmark_instances.append(benchmark)
     
@@ -1074,15 +1077,15 @@ def main():
 
     parser = argparse.ArgumentParser(description="Run IR benchmarks")
     parser.add_argument('--ir', type=str, help="Path to the IR expressions file")
-    parser.add_argument('--output', type=str, default=OUTPUT_FILE, help="Path to save benchmark results")
+    parser.add_argument('--output', type=str, default=None, help="Output filename prefix (e.g. 'bench' → bench_roco_llama.json)")
     parser.add_argument('--start', type=int, default=START_EXPRESSIONS, help="Start from test case ID")
     parser.add_argument('--num', type=int, default=NUM_EXPRESSIONS, help="Number of expressions to benchmark")
     parser.add_argument('--end', action='store_true', help="Run from start ID to the last test case")
     parser.add_argument('--topk', type=int, default=TOP_K, help="Number of top kernels to report")
     parser.add_argument('--all', action='store_true', help="Run all configurations comprehensively")
     parser.add_argument('--shapes', type=str, help="Path to shapes.json for tensor shapes")
-    parser.add_argument('--type', '-t', type=str, dest='type', help="Benchmark type (e.g. roco, vanilla, ffn)")
-    parser.add_argument('--model', '-m', type=str, dest='model', help="Model name (e.g. llama)")
+    parser.add_argument('--type', type=str, dest='type', help="Benchmark type (e.g. roco, vanilla, ffn)")
+    parser.add_argument('--model', type=str, dest='model', help="Model name (e.g. llama)")
     parser.add_argument('--optimized', action='store_true', help="Benchmark only representative IRs and predict nearby candidates")
     parser.add_argument('--max-benchmarks', type=int, default=64, help="Maximum number of representative IRs to benchmark")
     parser.add_argument('--seed-samples', type=int, default=16, help="Number of diverse seed representatives")
@@ -1091,6 +1094,7 @@ def main():
     parser.add_argument('--warmup-runs', type=int, default=10, help="Number of warmup runs before measurement")
     parser.add_argument('--benchmark-runs', type=int, default=100, help="Number of timed runs per IR")
     parser.add_argument('--cuda-graph', action='store_true', help="Use CUDA graph capture/replay for benchmarking")
+    parser.add_argument("--device", type=int, default=0, help="Type device number")
 
     args = parser.parse_args()
 
@@ -1102,6 +1106,17 @@ def main():
             args.ir = f"evaluation/{args.type}/{args.type}_{args.model}_cost6_kern1.txt"
         if args.shapes is None:
             args.shapes = f"profile/shapes/{args.type}_{args.model}.json"
+    # Build output file path
+    if args.type and args.model:
+        if args.output:
+            filename = f"{args.output}_{args.type}_{args.model}.json"
+        else:
+            filename = f"{args.type}_{args.model}.json"
+        args.output = f"./profile_result/{args.type}/{filename}"
+    elif args.output:
+        args.output = f"./profile_result/{args.output}.json"
+    else:
+        args.output = OUTPUT_FILE
 
     if args.ir is None:
         print("Error: --ir is required unless both --type and --model are specified.")
@@ -1148,6 +1163,7 @@ def main():
         benchmark_runs=args.benchmark_runs,
         use_cuda_graph=args.cuda_graph,
         debug_prefix=debug_prefix,
+        device=args.device,
     )
     
     print(f"\nAll results saved to: {args.output}")

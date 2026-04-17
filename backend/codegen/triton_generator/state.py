@@ -109,14 +109,14 @@ class CodeGenState:
         *,
         force_fp32: bool = False,
     ) -> tuple[str, str, bool]:
-        # tl.dot requires both operands to have the same dtype.
-        # tl.dot always produces fp32 output (accumulator), so inputs should be fp16.
-        # If either operand is fp32 (e.g. from tl.exp), cast it down to fp16.
-        left_requires_fp32 = self.node_requires_fp32(left_node)
-        right_requires_fp32 = self.node_requires_fp32(right_node)
-        if left_requires_fp32:
+        # tl.dot requires both operands to have the same dtype (fp16 for tensor core).
+        # Always ensure both operands are fp16: some ops (division, accumulator
+        # shape transforms, etc.) silently produce fp32 and node_requires_fp32
+        # cannot catch every case.  Casting an already-fp16 tensor is a no-op
+        # that Triton optimises away.
+        if '.to(tl.float16)' not in left:
             left = f"{left}.to(tl.float16)"
-        if right_requires_fp32:
+        if '.to(tl.float16)' not in right:
             right = f"{right}.to(tl.float16)"
         # tl.dot result is always fp32, so keep_fp32=True
         keep_fp32 = True

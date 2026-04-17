@@ -7,7 +7,7 @@ def main():
     parser.add_argument("--m", type=str, default="llama", help="Input model type")
     parser.add_argument("--t", type=str, default="vanilla", help="Benchmark type")
     parser.add_argument("--n", type=int, default=0, help="Case number for IR")
-    parser.add_argument("--d", type=int, default=1, help="Type device number")
+    parser.add_argument("--d", type=int, default=0, help="Type device number")
     parser.add_argument("--baseline", nargs="*", default=["trinity"], help="List of baselines")
     parser.add_argument("--print_output", action="store_true")
     args = parser.parse_args()
@@ -119,10 +119,20 @@ def main():
     # --------------- Init for Attention ---------------------
     std = 0.01
     X = torch.randn((M, N), device=device, dtype=dtype) * std
-    
+    X2 = torch.zeros((M,), device=device, dtype=dtype)
+    X_norm = torch.zeros((M, N), device=device, dtype=dtype)
+
     WQ = torch.randn((N, N), device=device, dtype=dtype) * std
     WK = torch.randn((N, N), device=device, dtype=dtype) * std
     WV = torch.randn((N, N), device=device, dtype=dtype) * std
+
+    Q1 = torch.zeros((M, N), device=device, dtype=dtype)
+    K1 = torch.zeros((M, N), device=device, dtype=dtype)
+    V1 = torch.zeros((M, N), device=device, dtype=dtype)
+
+    Q2 = torch.zeros((M, H, D), device=device, dtype=dtype)
+    K2 = torch.zeros((M, H, D), device=device, dtype=dtype)
+    V2 = torch.zeros((M, H, D), device=device, dtype=dtype)
 
     K_cache = torch.randn((H, P+M, D), device=device, dtype=dtype) * std
     V_cache = torch.randn((H, P+M, D), device=device, dtype=dtype) * std
@@ -130,7 +140,16 @@ def main():
     K_cache_flashinfer = K_cache.clone().transpose(0, 1).contiguous()
     V_cache_flashinfer = V_cache.clone().transpose(0, 1).contiguous()
 
+    Q = torch.zeros((H, M, D), device=device, dtype=dtype)
+    K = torch.zeros((H, M, D), device=device, dtype=dtype)
+    V = torch.zeros((H, M, D), device=device, dtype=dtype)
+
+    O = torch.zeros((H, M, D), device=device, dtype=dtype)
+    O1 = torch.zeros((M, H, D), device=device, dtype=dtype)
     O2 = torch.zeros((M, N), device=device, dtype=dtype) * std
+
+    Q_norm = torch.zeros((H, M, D), device=device, dtype=dtype)
+    K_norm = torch.zeros((H, M, D), device=device, dtype=dtype)
 
     # --------------- Additional init for RoCo ---------------------
     C_exp = torch.zeros((H, M, P+M), device=device, dtype=torch.float32)
@@ -139,7 +158,10 @@ def main():
 
     # --------------- Additional init for KeyFormer ---------------------
     C = torch.zeros((H, M, P+M), device=device, dtype=dtype)
+    C_sum = torch.zeros((H, M), device=device, dtype=dtype)
+    C_sum_perturb = torch.zeros((H, M), device=device, dtype=dtype)
     C_exp_perturb = torch.zeros((H, M, P+M), device=device, dtype=torch.float32)
+    C_perturb = torch.zeros((H, M, P+M), device=device, dtype=dtype)
     C_out = torch.zeros((H, P+M), device=device, dtype=dtype)
     noise = torch.randn((H, M, P+M), device=device, dtype=dtype) * std
 
@@ -150,12 +172,18 @@ def main():
     else:
         O2 = torch.randn(M, N, dtype=dtype, device=device) * std
     FF1 = torch.zeros(M, N4, dtype=dtype, device=device)
+    FF1a = torch.zeros(M, N4, dtype=dtype, device=device)
+    FF1b = torch.zeros(M, N4, dtype=dtype, device=device)
+    FF1b_silu = torch.zeros(M, N4, dtype=dtype, device=device)
     FF2 = torch.zeros(M, N4, dtype=dtype, device=device)
     WFF1a = torch.randn(N, N4, dtype=dtype, device=device) * std
     WFF1b = torch.randn(N, N4, dtype=dtype, device=device) * std
     WFF2 = torch.randn(N4, N, dtype=dtype, device=device) * std
     WO = torch.randn(N, N, dtype=dtype, device=device) * std
+    attn_O1 = torch.zeros(M, N, dtype=dtype, device=device)
     attn_O2 = torch.zeros(M, N, dtype=dtype, device=device)
+    attn_O3 = torch.zeros((M,), dtype=dtype, device=device)
+    attn_O_norm = torch.zeros(M, N, dtype=dtype, device=device)
 
 
 
@@ -254,13 +282,23 @@ def main():
         C_div = torch.zeros((H, M, P+M), device=device, dtype=dtype)
         C_div_perturb = torch.zeros((H, M, P+M), device=device, dtype=dtype)
         tensors = {
-            'X': X, 'WQ': WQ, 'WK': WK, 'WV': WV,
+            'X': X, 'X2': X2, 'X_norm': X_norm,
+            'WQ': WQ, 'WK': WK, 'WV': WV,
+            'Q1': Q1, 'K1': K1, 'V1': V1,
+            'Q2': Q2, 'K2': K2, 'V2': V2,
             'K_cache': K_cache, 'V_cache': V_cache,
-            'O2': O2, 'C': C, 'C_exp': C_exp, 'noise': noise,
-            'C_exp_perturb': C_exp_perturb, 'C_div': C_div, 'C_div_perturb': C_div_perturb,
+            'Q': Q, 'K': K, 'V': V,
+            'O': O, 'O1': O1, 'O2': O2,
+            'C': C, 'C_exp': C_exp, 'C_div': C_div, 'C_sum': C_sum,
+            'noise': noise, 'C_perturb': C_perturb,
+            'C_exp_perturb': C_exp_perturb, 'C_sum_perturb': C_sum_perturb,
+            'C_div_perturb': C_div_perturb,
             'C_out': C_out, 'C_out1': C_out1, 'C_out2': C_out2,
-            'WO': WO, 'attn_O2': attn_O2,
+            'Q_norm': Q_norm, 'K_norm': K_norm,
+            'WO': WO, 'attn_O1': attn_O1, 'attn_O2': attn_O2,
+            'attn_O3': attn_O3, 'attn_O_norm': attn_O_norm,
             'WFF1a': WFF1a, 'WFF1b': WFF1b,
+            'FF1a': FF1a, 'FF1b': FF1b, 'FF1b_silu': FF1b_silu,
             'FF1': FF1, 'FF2': FF2, 'WFF2': WFF2,
         }
         blocks = {

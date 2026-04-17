@@ -30,7 +30,7 @@ class OptimizeConfig:
     fail_on_frontend_errors: bool = False
     optimizer_iter_limit: int = 8
     optimizer_timeout_s: int = 3600
-    backend_timeout_s: int = 9600
+    backend_timeout_s: Optional[int] = None
     backend_optimized_benchmark: bool = True
     backend_max_benchmarks: int = 64
     backend_seed_samples: int = 16

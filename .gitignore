@@ -233,6 +233,10 @@ backend/codegen/triton_generator_backup/
 backend/results/
 backend/profile/debug/
 
+CLAUDE.md
+PRECISION_STRATEGY.md
+test*
+
 node_modules/
 package-lock.json
 package.json
