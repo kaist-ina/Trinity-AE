@@ -1,4 +1,4 @@
-# Trinity Project \[ASPLOS 2026\] (To appear)
+# Trinity Project \[ASPLOS 2026\]
 
 > Three-Dimensional Tensor Program Optimization via Tile-level Equality Saturation
 
