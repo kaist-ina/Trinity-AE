@@ -1095,6 +1095,7 @@ def main():
     parser.add_argument('--benchmark-runs', type=int, default=100, help="Number of timed runs per IR")
     parser.add_argument('--cuda-graph', action='store_true', help="Use CUDA graph capture/replay for benchmarking")
     parser.add_argument("--device", type=int, default=0, help="Type device number")
+    parser.add_argument("--e2e", action="store_true", help="End-to-end mode: use --output as the exact output path (used by trinity.optimize)")
 
     args = parser.parse_args()
 
@@ -1107,7 +1108,12 @@ def main():
         if args.shapes is None:
             args.shapes = f"profile/shapes/{args.type}_{args.model}.json"
     # Build output file path
-    if args.type and args.model:
+    if args.e2e:
+        # e2e mode: --output is the exact path passed by trinity.optimize
+        if not args.output:
+            print("Error: --output is required when using --e2e mode.")
+            return
+    elif args.type and args.model:
         if args.output:
             filename = f"{args.output}_{args.type}_{args.model}.json"
         else:
