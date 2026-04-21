@@ -567,11 +567,21 @@ where
         info!("Search time: {}", search_time);
 
         let apply_time = Instant::now();
-
+        println!("\nIteration {}", self.iterations.len()+1);
+        let mut loop_fusion_matches: usize = 0;
+        let mut seq_comm_matches: usize = 0;
         result = result.and_then(|_| {
             rules.iter().zip(matches).try_for_each(|(rw, ms)| {
                 let total_matches: usize = ms.iter().map(|m| m.substs.len()).sum();
-                // println!("Applying {} {} times", rw.name, total_matches);
+                if rw.name.as_str() == "loop-fusion-unified" || rw.name.as_str() == "loop-fusion-unified-tail" {
+                    loop_fusion_matches += total_matches;
+                }
+                if rw.name.as_str() == "seq-comm" || rw.name.as_str() == "seq-comm-tail" {
+                    seq_comm_matches += total_matches;
+                }
+                if total_matches > 10 {
+                    println!("Applying {} {} times", rw.name, total_matches);
+                }
 
                 let actually_matched = self.scheduler.apply_rewrite(i, &mut self.egraph, rw, ms);
                 if actually_matched > 0 {
@@ -585,6 +595,8 @@ where
                 self.check_limits()
             })
         });
+        println!("loop-fusion pattern matches: {}", loop_fusion_matches);
+        println!("seq-comm pattern matches: {}", seq_comm_matches);
 
         let apply_time = apply_time.elapsed().as_secs_f64();
         info!("Apply time: {}", apply_time);
@@ -602,6 +614,8 @@ where
             self.egraph.total_size(),
             self.egraph.number_of_classes()
         );
+        let edge_count: usize = self.egraph.classes().flat_map(|class| &class.nodes).map(|node| node.len()).sum();
+        println!("E-graph size: e-nodes={}, e-classes={}, edges={}", self.egraph.total_size(), self.egraph.number_of_classes(), edge_count);
 
         let can_be_saturated = applied.is_empty()
             && self.scheduler.can_stop(i)

@@ -3715,6 +3715,10 @@ def _unwrap_self_accumulation(
         return value.right
     if match_identity_mul(value.right):
         return value.left
+    if match_self_load(value.left):
+        return value.right
+    if match_self_load(value.right):
+        return value.left
     return None
 
 
