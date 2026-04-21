@@ -67,7 +67,7 @@ fn llama_extract_rmsnorm_qkv_attn_expressions() {
     (loop 0 4096 tile_k k
         (store (tensor X2)
             (+
-                (* (load (tensor X2) (index (fulltile))) 1)
+                (load (tensor X2) (index (fulltile)))
                 (rsum
                     (sqr (load (input X) (index (fulltile) (tile k))))
                     1
@@ -99,7 +99,7 @@ fn llama_extract_rmsnorm_qkv_attn_expressions() {
         (loop 0 4096 tile_k k
             (store (tensor Q1,K1,V1)
                 (+
-                    (* (load (tensor Q1,K1,V1) (index (fulltile) (tile n))) 1)
+                    (load (tensor Q1,K1,V1) (index (fulltile) (tile n)))
                     (@
                         (load (tensor X_norm) (index (fulltile) (tile k)))
                         (load (input WQ,WK,WV) (index (tile k) (tile n)))
@@ -162,7 +162,7 @@ fn llama_extract_rmsnorm_qkv_attn_expressions() {
         (loop 0 1024 tile_p p
             (store (tensor C_sum)
                 (+
-                    (* (load (tensor C_sum) (index (tile h) (fulltile))) 1)
+                    (load (tensor C_sum) (index (tile h) (fulltile)))
                     (rsum
                         (load (tensor C_exp) (index (tile h) (fulltile) (tile p)))
                         2
@@ -192,7 +192,7 @@ fn llama_extract_rmsnorm_qkv_attn_expressions() {
         (loop 0 1024 tile_p p
             (store (tensor O)
                 (+
-                    (* (load (tensor O) (index (tile h) (fulltile) (fulltile))) 1)
+                    (load (tensor O) (index (tile h) (fulltile) (fulltile)))
                     (@
                         (load (tensor C_div) (index (tile h) (fulltile) (tile p)))
                         (load (input V_cache) (index (tile h) (tile p) (fulltile)))
@@ -307,7 +307,7 @@ fn falcon_extract_rmsnorm_qkv_attn_expressions() {
     (loop 0 4544 tile_k k
         (store (tensor X2)
             (+
-                (* (load (tensor X2) (index (fulltile))) 1)
+                (load (tensor X2) (index (fulltile)))
                 (rsum
                     (sqr (load (input X) (index (fulltile) (tile k))))
                     1
@@ -339,7 +339,7 @@ fn falcon_extract_rmsnorm_qkv_attn_expressions() {
         (loop 0 4544 tile_k k
             (store (tensor Q1,K1,V1)
                 (+
-                    (* (load (tensor Q1,K1,V1) (index (fulltile) (tile n))) 1)
+                    (load (tensor Q1,K1,V1) (index (fulltile) (tile n)))
                     (@
                         (load (tensor X_norm) (index (fulltile) (tile k)))
                         (load (input WQ,WK,WV) (index (tile k) (tile n)))
@@ -402,7 +402,7 @@ fn falcon_extract_rmsnorm_qkv_attn_expressions() {
         (loop 0 1024 tile_p p
             (store (tensor C_sum)
                 (+
-                    (* (load (tensor C_sum) (index (tile h) (fulltile))) 1)
+                    (load (tensor C_sum) (index (tile h) (fulltile)))
                     (rsum
                         (load (tensor C_exp) (index (tile h) (fulltile) (tile p)))
                         2
@@ -432,7 +432,7 @@ fn falcon_extract_rmsnorm_qkv_attn_expressions() {
         (loop 0 1024 tile_p p
             (store (tensor O)
                 (+
-                    (* (load (tensor O) (index (tile h) (fulltile) (fulltile))) 1)
+                    (load (tensor O) (index (tile h) (fulltile) (fulltile)))
                     (@
                         (load (tensor C_div) (index (tile h) (fulltile) (tile p)))
                         (load (input V_cache) (index (tile h) (tile p) (fulltile)))
@@ -545,7 +545,7 @@ fn prenorm_split_part1() {
     (loop 0 4096 tile_k k
         (store (tensor X2)
             (+
-                (* (load (tensor X2) (index (fulltile))) 1)
+                (load (tensor X2) (index (fulltile)))
                 (rsum
                     (sqr (load (input X) (index (fulltile) (tile k))))
                     1
@@ -577,7 +577,7 @@ fn prenorm_split_part1() {
         (loop 0 4096 tile_k k
             (store (tensor Q1,K1,V1)
                 (+
-                    (* (load (tensor Q1,K1,V1) (index (fulltile) (tile n))) 1)
+                    (load (tensor Q1,K1,V1) (index (fulltile) (tile n)))
                     (@
                         (load (tensor X_norm) (index (fulltile) (tile k)))
                         (load (input WQ,WK,WV) (index (tile k) (tile n)))
@@ -703,7 +703,7 @@ fn count_all() {
     (loop 0 4544 tile_k k
         (store (tensor X2)
             (+
-                (* (load (tensor X2) (index (fulltile))) 1)
+                (load (tensor X2) (index (fulltile)))
                 (rsum
                     (sqr (load (input X) (index (fulltile) (tile k))))
                     1
@@ -735,7 +735,7 @@ fn count_all() {
         (loop 0 4544 tile_k k
             (store (tensor Q1,K1,V1)
                 (+
-                    (* (load (tensor Q1,K1,V1) (index (fulltile) (tile n))) 1)
+                    (load (tensor Q1,K1,V1) (index (fulltile) (tile n)))
                     (@
                         (load (tensor X_norm) (index (fulltile) (tile k)))
                         (load (input WQ,WK,WV) (index (tile k) (tile n)))
@@ -798,7 +798,7 @@ fn count_all() {
         (loop 0 1024 tile_p p
             (store (tensor C_sum)
                 (+
-                    (* (load (tensor C_sum) (index (tile h) (fulltile))) 1)
+                    (load (tensor C_sum) (index (tile h) (fulltile)))
                     (rsum
                         (load (tensor C_exp) (index (tile h) (fulltile) (tile p)))
                         2
@@ -828,7 +828,7 @@ fn count_all() {
         (loop 0 1024 tile_p p
             (store (tensor O)
                 (+
-                    (* (load (tensor O) (index (tile h) (fulltile) (fulltile))) 1)
+                    (load (tensor O) (index (tile h) (fulltile) (fulltile)))
                     (@
                         (load (tensor C_div) (index (tile h) (fulltile) (tile p)))
                         (load (input V_cache) (index (tile h) (tile p) (fulltile)))
@@ -930,7 +930,7 @@ fn attention_only() {
         (loop 0 1024 tile_p p
             (store (tensor C_sum)
                 (+
-                    (* (load (tensor C_sum) (index (tile h) (fulltile))) 1)
+                    (load (tensor C_sum) (index (tile h) (fulltile)))
                     (rsum
                         (load (tensor C_exp) (index (tile h) (fulltile) (tile p)))
                         2
@@ -959,7 +959,7 @@ fn attention_only() {
         (loop 0 1024 tile_p p
             (store (tensor O)
                 (+
-                    (* (load (tensor O) (index (tile h) (fulltile) (fulltile))) 1)
+                    (load (tensor O) (index (tile h) (fulltile) (fulltile)))
                     (@
                         (load (tensor C_div) (index (tile h) (fulltile) (tile p)))
                         (load (input V_cache) (index (tile h) (tile p) (fulltile)))

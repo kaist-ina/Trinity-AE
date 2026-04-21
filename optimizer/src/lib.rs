@@ -34,7 +34,7 @@ pub use extract_with_cost::{
 pub use language::{Access, LoopAnalysis, LoopData, TileLang};
 pub use optimization::run_until_saturated;
 pub use postprocess::{postprocess, postprocess_egraph, postprocess_v2};
-pub use rules::{custom_rules, default_tiling, only_seqcomm_rules, rules, rules_wo_seqcomm};
+pub use rules::{custom_rules, rules};
 pub use utils::measure_enode_proportions;
 pub use visualizer::{save_egraph, save_egraph_from_egraph};
 // #[cfg(feature = "serde-1")]

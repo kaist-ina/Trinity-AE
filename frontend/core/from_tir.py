@@ -172,8 +172,8 @@ def _extract_axes(prim_func: tir.PrimFunc) -> List[str]:
 
 
 def _accumulate_with_identity(acc_value: T.ASTNode, update_value: T.ASTNode) -> T.ASTNode:
-    """Make reduction-style accumulation explicit as (+ (* acc 1) update)."""
-    return T.Add(T.Mul(acc_value, T.Const(1)), update_value)
+    """Make reduction-style accumulation explicit as (+ acc update)."""
+    return T.Add(acc_value, update_value)
 
 
 def _get_output_tensor_info(prim_func: tir.PrimFunc) -> T.TensorInfo:
