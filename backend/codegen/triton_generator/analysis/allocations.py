@@ -13,13 +13,11 @@ class AllocationPlanner:
         cross_sloop_tensors = set()
         sloop_intermediate_tensors = set()
         cross_sloop_memory_tensors = set()
-        fp32_tensors = set()
         if ast:
             accumulators = self.identify_accumulators(ast)
             cross_sloop_tensors = self.identify_cross_sloop_tensors(ast)
             sloop_intermediate_tensors = self.identify_sloop_intermediate_tensors(ast)
             cross_sloop_memory_tensors = self.identify_cross_sloop_memory_tensors(ast)
-            fp32_tensors = self.identify_fp32_tensors(ast)
 
             non_cross_sloop_accumulators = accumulators - cross_sloop_tensors
             cross_sloop_memory_tensors -= non_cross_sloop_accumulators
@@ -125,14 +123,12 @@ class AllocationPlanner:
                     tensor_name in accumulators
                     or tensor_name in sloop_intermediate_tensors
                 ):
-                    # All pre-allocated tensors use fp32:
-                    # - Accumulators: fp32 for precision during loop accumulation
-                    # - Sloop intermediates: fp32 to avoid loop-carried variable type mismatch
-                    #   (fp16 cast deferred to point of use: tl.store global, tl.dot input)
-                    dtype = "tl.float32"
-                    if tensor_name in sloop_intermediate_tensors and tensor_name not in accumulators:
-                        self.state.transform_fp32_tensors.add(tensor_name)
-                    code += f"    {tensor_name} = tl.zeros({shape_str}, dtype={dtype})\n"
+                    # All pre-allocated tensors use fp32. With the inductor-style
+                    # precision rule (register dtype = fp32 uniformly), there is
+                    # no need to tag sloop intermediates separately — loads are
+                    # promoted to fp32 at load time and global stores downcast
+                    # to fp16, so dtype stays consistent without extra tracking.
+                    code += f"    {tensor_name} = tl.zeros({shape_str}, dtype=tl.float32)\n"
 
         code += "\n"
         return code

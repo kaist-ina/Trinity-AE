@@ -96,12 +96,19 @@ class MemoryOps:
 
         # Generate mask if needed
         mask_code, mask_var = self.gen.masking.generate_mask_for_index(index_node, tensor_name)
+        # Follow inductor's precision rule: cross-kernel / cross-sloop / input
+        # globals are all fp16, but register compute is fp32. Promote on load
+        # so the register value is fp32; tl.dot inputs get downcast back to
+        # fp16 later via promote_dot_operands, global stores downcast to fp16
+        # via the tl.store path. Removes the need for a separate fp32-identity
+        # analysis (transform_fp32_tensors) and eliminates cross-kernel dtype
+        # mismatch bugs.
         if mask_var:  # Check if mask_var exists, not just mask_code
             if mask_code:
                 code += mask_code
-            code += f"{indent_str}{var_name} = tl.load({tensor_name}_ptr + {offset_var}, mask={mask_var}, other=0.0)"
+            code += f"{indent_str}{var_name} = tl.load({tensor_name}_ptr + {offset_var}, mask={mask_var}, other=0.0).to(tl.float32)"
         else:
-            code += f"{indent_str}{var_name} = tl.load({tensor_name}_ptr + {offset_var})"
+            code += f"{indent_str}{var_name} = tl.load({tensor_name}_ptr + {offset_var}).to(tl.float32)"
 
         # No need for expand_dims anymore - proper offset calculation handles all dimensions
         # The loaded tensor will have the correct shape based on the offset dimensions
@@ -158,9 +165,6 @@ class MemoryOps:
 
         tensor_name = tensor_node.children[0].value
         tensor_type = tensor_node.node_type
-
-        # Set current store tensor context for binary/unary ops
-        self.state.current_store_tensor = tensor_name
 
         # Skip store operation if this is a kernel accumulator
         # UNLESS it's also a cross-sloop memory tensor (needs immediate store)
@@ -250,14 +254,6 @@ class MemoryOps:
             else:
                 value_expr = value_code
 
-        fp32_tensors = self.state.get_fp32_tensors()
-        all_accumulators = getattr(self.state, 'all_accumulators', set())
-        if tensor_name in fp32_tensors or tensor_name in all_accumulators:
-            # Only strip trailing .to(tl.float16) from the outermost expression,
-            # not from dot operand casts inside the expression
-            if value_expr.endswith('.to(tl.float16)'):
-                value_expr = value_expr[:-len('.to(tl.float16)')]
-
         # Use proper indentation based on current context
         indent_str = '    ' * self.state.indent_level
 
@@ -297,28 +293,14 @@ class MemoryOps:
             else:
                 code += f"{indent_str}tl.store({tensor_name}_ptr + {offset_var}, {value_expr})"
         else:
-            # Non-accumulator intermediate tensors: cast fp32 expressions to fp16
-            # to match PyTorch behavior and maintain loop-carried variable type consistency
-            # Skip if expression already contains fp16 cast (e.g., from accumulator load)
-            #
-            # Exception: shape-only transforms (permute, unsqueeze, squeeze, transpose)
-            # do NOT insert a fp16 cast — they pass through whatever precision their input
-            # has. The cast happens at the actual point of use (global memory store,
-            # tl.dot input via promote_dot_operands). This prevents intermediate fp16
-            # round-trips that would cause overflow in downstream operations like x*x.
-            is_shape_transform = val_node.node_type in (
-                NodeType.PERMUTE3, NodeType.TRANSPOSE,
-                NodeType.SQUEEZE, NodeType.UNSQUEEZE,
-            )
-            if tensor_name not in fp32_tensors and tensor_name not in all_accumulators and not is_shape_transform:
-                if '.to(tl.float16)' not in value_expr:
-                    value_expr = f"{value_expr}.to(tl.float16)"
-            elif is_shape_transform:
-                # If this shape transform's source is fp32 (accumulator or fp32 tensor),
-                # mark the destination as fp32 so downstream ops (tl.dot) can cast correctly.
-                all_fp32 = self.state.get_fp32_tensors() | all_accumulators
-                if self.gen.analyzer.uses_fp32_tensors(val_node, all_fp32):
-                    self.state.transform_fp32_tensors.add(tensor_name)
+            # Register intermediate store: value_expr stays fp32 (inductor-style
+            # precision rule). Load-time promotion (generate_load adds
+            # `.to(tl.float32)`), fp32 compute, and `promote_dot_operands`
+            # downcasting at tl.dot inputs keep the register dtype invariant
+            # at fp32 everywhere except tensor-core matmul operand slots.
+            # The only dtype cast we still apply is at the global-store branch
+            # above, which downcasts to fp16 to match PyTorch's storage dtype.
+            pass
 
             # For intermediate tensors (pre-allocated with tl.zeros), use direct assignment
             # Check if index has any tiles or if it's a simple element access

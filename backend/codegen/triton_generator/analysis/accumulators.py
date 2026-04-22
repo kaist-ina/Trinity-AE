@@ -8,8 +8,36 @@ from ...NodeType import NodeType
 
 class AccumulatorAnalysis:
     def find_nested_sloop_accumulators(self, ast: ASTNode, loop_var: str = None) -> set:
-        """Find accumulators that are used in nested sloops within this AST."""
+        """Find accumulators in nested sloops that need per-iteration re-init.
+
+        Called in two contexts:
+          * Without ``loop_var`` (from ``AllocationPlanner``): conservatively
+            identify cross-sloop-memory accumulators to skip at kernel-top
+            allocation. Behavior preserved — only inspects
+            ``state.kernel_accumulators``.
+          * With ``loop_var`` (from ``LoopEmitter.generate_sloop``): decide
+            which accumulators to zero-init at the START of the enclosing
+            sloop's body. Two cases qualify:
+              (1) the accumulator's index uses ``loop_var`` — per-tile
+                  scratch buffer that differs each outer iteration.
+              (2) neither the index nor the rhs depends on ``loop_var`` —
+                  the accumulator is outer-loop-invariant, so the inner
+                  reduction must restart each outer iteration (otherwise
+                  eq-saturation으로 도입된 redundant outer loop가 결과를
+                  배수로 누적시켜 정확도를 깬다).
+            The excluded case (index-independent, rhs-dependent on
+            ``loop_var``) is a genuine cross-outer-loop accumulator (e.g.
+            softmax denominator accumulated across m-tiles); keep its init
+            at the enclosing scope.
+        """
         accumulators = set()
+
+        # Register-only accumulators (not in ``kernel_accumulators``) only
+        # need per-iteration re-init when a specific enclosing ``loop_var`` is
+        # supplied. For the no-``loop_var`` call site, keep the original
+        # conservative behavior so kernel-top allocation is not disturbed.
+        consider_register_accs = loop_var is not None
+        all_accs = getattr(self.state, "all_accumulators", set())
 
         def find_in_sloop(node: ASTNode, in_nested: bool = False, depth: int = 0):
             if node.node_type == NodeType.SLOOP:
@@ -21,21 +49,28 @@ class AccumulatorAnalysis:
 
                 if tensor_node.node_type in [NodeType.INPUT, NodeType.OUTPUT, NodeType.TENSOR]:
                     for child in tensor_node.children:
-                        if child.node_type == NodeType.VAR:
-                            tensor_name = child.value
-                            if self.expression_contains_tensor(val_node, tensor_name):
-                                if self.is_accumulation_pattern(val_node, tensor_name):
-                                    if tensor_name in self.state.kernel_accumulators:
-                                        if loop_var and index_node:
-                                            uses_loop_var = False
-                                            for idx_child in index_node.children:
-                                                if self.index_uses_loop_var(idx_child, loop_var):
-                                                    uses_loop_var = True
-                                                    break
-                                            if uses_loop_var:
-                                                accumulators.add(tensor_name)
-                                        elif not loop_var:
-                                            accumulators.add(tensor_name)
+                        if child.node_type != NodeType.VAR:
+                            continue
+                        tensor_name = child.value
+                        if not self.expression_contains_tensor(val_node, tensor_name):
+                            continue
+                        if not self.is_accumulation_pattern(val_node, tensor_name):
+                            continue
+                        is_acc = tensor_name in self.state.kernel_accumulators
+                        if consider_register_accs and tensor_name in all_accs:
+                            is_acc = True
+                        if not is_acc:
+                            continue
+                        if loop_var and index_node:
+                            uses_loop_var = any(
+                                self.index_uses_loop_var(idx_child, loop_var)
+                                for idx_child in index_node.children
+                            )
+                            rhs_dep = self._rhs_depends_on_loop_var(val_node, loop_var)
+                            if uses_loop_var or not rhs_dep:
+                                accumulators.add(tensor_name)
+                        elif not loop_var:
+                            accumulators.add(tensor_name)
             else:
                 for child in node.children:
                     if isinstance(child, ASTNode):
@@ -43,6 +78,26 @@ class AccumulatorAnalysis:
 
         find_in_sloop(ast)
         return accumulators
+
+    def _rhs_depends_on_loop_var(self, expr: ASTNode, loop_var: str) -> bool:
+        """Whether any load's index in ``expr`` references ``loop_var``.
+
+        Used to distinguish a genuine cross-outer-loop accumulator (rhs
+        actually depends on the outer loop var through some load's index)
+        from an outer-loop-invariant one (rhs ignores the outer loop).
+        """
+        if expr.node_type == NodeType.LOAD and len(expr.children) >= 2:
+            index_node = expr.children[1]
+            if index_node is not None and hasattr(index_node, "children"):
+                for idx_child in index_node.children:
+                    if self.index_uses_loop_var(idx_child, loop_var):
+                        return True
+            return False
+        for child in expr.children:
+            if isinstance(child, ASTNode):
+                if self._rhs_depends_on_loop_var(child, loop_var):
+                    return True
+        return False
 
     def generate_nested_accumulator_init(self, accumulators: set) -> str:
         """Generate initialization code for nested accumulators."""
@@ -162,120 +217,6 @@ class AccumulatorAnalysis:
 
         traverse(ast)
         return accumulators
-
-    def identify_fp32_tensors(self, ast: ASTNode) -> set:
-        """Identify intermediate tensors that should stay in fp32.
-
-        Only tensors that are direct store targets of fp32-producing operations
-        (exp, sqrt, sigmoid, erf) are marked. Input tensors of these operations
-        are NOT marked — they receive .to(tl.float32) cast at the call site.
-        Accumulators are handled separately (always fp32 in init).
-        """
-        fp32_tensors = set()
-
-        def find_fp32_stores(node: ASTNode):
-            if node.node_type == NodeType.STORE and len(node.children) >= 2:
-                tensor_node = node.children[0]
-                value_node = node.children[1]
-
-                if self.contains_fp32_promoting_operation(value_node):
-                    if tensor_node.node_type == NodeType.TENSOR:
-                        for child in tensor_node.children:
-                            if child.node_type == NodeType.VAR:
-                                fp32_tensors.add(child.value)
-
-            for child in node.children:
-                if isinstance(child, ASTNode):
-                    find_fp32_stores(child)
-
-        def find_fp32_dependencies(node: ASTNode):
-            if node.node_type == NodeType.STORE and len(node.children) >= 2:
-                tensor_node = node.children[0]
-                value_node = node.children[1]
-
-                if tensor_node.node_type == NodeType.TENSOR:
-                    for i, child in enumerate(tensor_node.children):
-                        if child.node_type != NodeType.VAR:
-                            continue
-
-                        stored_tensor = child.value
-                        if len(tensor_node.children) > 1:
-                            relevant_value = self.gen.memory.replace_multi_tensor_loads(
-                                value_node, i
-                            )
-                        else:
-                            relevant_value = value_node
-
-                        if self.uses_fp32_tensors(relevant_value, fp32_tensors):
-                            fp32_tensors.add(stored_tensor)
-
-            for child in node.children:
-                if isinstance(child, ASTNode):
-                    find_fp32_dependencies(child)
-
-        find_fp32_stores(ast)
-
-        prev_size = 0
-        while len(fp32_tensors) != prev_size:
-            prev_size = len(fp32_tensors)
-            find_fp32_dependencies(ast)
-
-        return fp32_tensors
-
-    def identify_exponentials(self, ast: ASTNode) -> set:
-        """Alias for the fp32-sensitive tensor analysis helper."""
-        return self.identify_fp32_tensors(ast)
-
-    def contains_fp32_promoting_operation(self, node: ASTNode) -> bool:
-        """Check if a node contains an op that promotes computation to fp32."""
-        if node.node_type in [NodeType.EXP, NodeType.SQRT, NodeType.SIGMOID, NodeType.ERF]:
-            return True
-
-        for child in node.children:
-            if isinstance(child, ASTNode) and self.contains_fp32_promoting_operation(child):
-                return True
-
-        return False
-
-    def contains_exp_operation(self, node: ASTNode) -> bool:
-        """Alias for fp32-promoting op detection."""
-        return self.contains_fp32_promoting_operation(node)
-
-    def uses_fp32_tensors(self, node: ASTNode, fp32_tensor_set: set) -> bool:
-        """Check if expression uses any tensor from the fp32-sensitive set."""
-        if node.node_type == NodeType.LOAD and len(node.children) >= 1:
-            tensor_node = node.children[0]
-            if tensor_node.node_type in [NodeType.INPUT, NodeType.OUTPUT, NodeType.TENSOR]:
-                for child in tensor_node.children:
-                    if child.node_type == NodeType.VAR and child.value in fp32_tensor_set:
-                        return True
-
-        for child in node.children:
-            if isinstance(child, ASTNode) and self.uses_fp32_tensors(child, fp32_tensor_set):
-                return True
-        return False
-
-    def uses_exp_tensors(self, node: ASTNode, exp_tensor_set: set) -> bool:
-        """Backward-compatible alias for fp32-sensitive tensor usage checks."""
-        return self.uses_fp32_tensors(node, exp_tensor_set)
-
-    def contains_fp32_tensor_load(self, node: ASTNode, fp32_tensor_set: set) -> bool:
-        """Check if a node contains a load of a fp32-sensitive tensor."""
-        if node.node_type == NodeType.LOAD and len(node.children) >= 1:
-            tensor_node = node.children[0]
-            if tensor_node.node_type in [NodeType.INPUT, NodeType.OUTPUT, NodeType.TENSOR]:
-                for child in tensor_node.children:
-                    if child.node_type == NodeType.VAR and child.value in fp32_tensor_set:
-                        return True
-
-        for child in node.children:
-            if isinstance(child, ASTNode) and self.contains_fp32_tensor_load(child, fp32_tensor_set):
-                return True
-        return False
-
-    def contains_exp_tensor_load(self, node: ASTNode, exp_tensor_set: set) -> bool:
-        """Backward-compatible alias for fp32-sensitive tensor load checks."""
-        return self.contains_fp32_tensor_load(node, exp_tensor_set)
 
     def generate_kernel_accumulator_init(self) -> str:
         """Generate initialization code for kernel accumulators.
@@ -420,25 +361,21 @@ class AccumulatorAnalysis:
                                 )
                                 slice_exprs.append(f":tl.arange(0, {padded_dim})")
 
-                        fp32_tensors = self.state.get_fp32_tensors()
-                        store_value = f"{tensor}.to(tl.float16)" if tensor in fp32_tensors else tensor
+                        # Kernel accumulators are fp32 registers. Global storage
+                        # is fp16, so always downcast on store.
                         code += (
                             f"{indent_str}tl.store({tensor}_ptr + offset_{self.state.offset_counter}, "
-                            f"{store_value}, mask={mask_var})\n"
+                            f"{tensor}.to(tl.float16), mask={mask_var})\n"
                         )
                     else:
-                        fp32_tensors = self.state.get_fp32_tensors()
-                        store_value = f"{tensor}.to(tl.float16)" if tensor in fp32_tensors else tensor
                         code += (
                             f"{indent_str}tl.store({tensor}_ptr + offset_{self.state.offset_counter}, "
-                            f"{store_value}, mask={mask_var})\n"
+                            f"{tensor}.to(tl.float16), mask={mask_var})\n"
                         )
                 else:
-                    fp32_tensors = self.state.get_fp32_tensors()
-                    store_value = f"{tensor}.to(tl.float16)" if tensor in fp32_tensors else tensor
                     code += (
                         f"{indent_str}tl.store({tensor}_ptr + offset_{self.state.offset_counter}, "
-                        f"{store_value})\n"
+                        f"{tensor}.to(tl.float16))\n"
                     )
                 self.state.offset_counter += 1
             else:
