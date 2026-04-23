@@ -77,6 +77,13 @@ class TrinityPipeline:
             )
             log("Backend    skipped (no expressions to profile)", config.verbose)
         elif config.skip_backend:
+            backend = BackendArtifacts(
+                benchmark_path=None,
+                source_benchmark_path=None,
+                all_results=[],
+            )
+            log("Backend    skipped (skip_backend=True)", config.verbose)
+        elif config.reuse_benchmark:
             backend = self.backend_stage.load_existing(
                 workspace_basename,
                 frontend,
@@ -84,7 +91,7 @@ class TrinityPipeline:
                 workspace,
                 verbose=config.verbose,
             )
-            log("Backend    skipped (reusing existing benchmark if available)", config.verbose)
+            log("Backend    reused (existing benchmark loaded)", config.verbose)
         else:
             backend = self.backend_stage.run(
                 workspace_basename,
