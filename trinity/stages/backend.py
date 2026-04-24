@@ -39,6 +39,7 @@ class BackendStage:
                 "--shapes",
                 str(frontend.shapes_path.resolve()),
                 "--all",
+                "--e2e",
                 "--output",
                 str(benchmark_path),
             ]

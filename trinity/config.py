@@ -26,6 +26,7 @@ class OptimizeConfig:
     skip_frontend: bool = False
     skip_optimizer: bool = False
     skip_backend: bool = False
+    reuse_benchmark: bool = False
     verbose: bool = True
     fail_on_frontend_errors: bool = False
     optimizer_iter_limit: int = 8
@@ -40,6 +41,15 @@ class OptimizeConfig:
     backend_benchmark_runs: int = 100
     backend_cuda_graph: bool = False
     shape_vars: Optional[dict] = None  # {pytorch_name: [sym, sym, ...]} for axis naming
+
+    def __post_init__(self):
+        if self.skip_backend and self.reuse_benchmark:
+            raise ValueError(
+                "skip_backend=True bypasses the backend stage entirely and cannot "
+                "be combined with reuse_benchmark=True. "
+                "Set reuse_benchmark=False to fully skip the backend, "
+                "or skip_backend=False to reuse an existing benchmark."
+            )
 
     @property
     def output_path(self) -> Path:

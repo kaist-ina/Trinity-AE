@@ -50,10 +50,6 @@ class CodeGenState:
         self.indices_loop_instance = {}
         self.sloop_depth = 0
         self.stored_accumulators = set()
-        self.current_store_tensor = None
-        self.fp32_tensors = set()
-        self.exp_tensors = set()
-        self.transform_fp32_tensors = set()  # intermediate tensors that stay fp32 due to shape-transform inheritance
         self.current_ast = None
         self.debug = bool(os.environ.get("TRITON_GEN_DEBUG"))
 
@@ -65,59 +61,20 @@ class CodeGenState:
         if self.debug:
             print(f"[TritonGen] {message}")
 
-    def get_fp32_tensors(self) -> set:
-        fp32_tensors = getattr(self, "fp32_tensors", None) or set()
-        transform_fp32 = getattr(self, "transform_fp32_tensors", set())
-        exp_tensors = getattr(self, "exp_tensors", set())
-        return fp32_tensors | transform_fp32 | exp_tensors
-
-    def is_fp32_tensor(self, tensor_name: str | None) -> bool:
-        return bool(tensor_name) and tensor_name in self.get_fp32_tensors()
-
-    def current_store_requires_fp32(self) -> bool:
-        tensor = getattr(self, "current_store_tensor", None)
-        if not tensor:
-            return False
-        # Accumulators always keep fp32 during accumulation
-        all_accumulators = getattr(self, "all_accumulators", set())
-        if tensor in all_accumulators:
-            return True
-        return self.is_fp32_tensor(tensor)
-
-    def node_requires_fp32(self, node) -> bool:
-        if node is None:
-            return False
-        fp32_tensors = self.get_fp32_tensors()
-        uses_fp32_tensor = False
-        contains_fp32_op = False
-        if self.gen is not None:
-            uses_fp32_tensor = self.gen.analyzer.contains_fp32_tensor_load(node, fp32_tensors)
-            contains_fp32_op = self.gen.analyzer.contains_fp32_promoting_operation(node)
-        return uses_fp32_tensor or contains_fp32_op
-
-    def cast_expression(self, expr: str, *, keep_fp32: bool, dtype: str = "tl.float16") -> str:
-        if keep_fp32:
-            return expr
-        return f"{expr}.to({dtype})"
-
     def promote_dot_operands(
         self,
         left: str,
         right: str,
         left_node,
         right_node,
-        *,
-        force_fp32: bool = False,
-    ) -> tuple[str, str, bool]:
-        # tl.dot requires both operands to have the same dtype (fp16 for tensor core).
-        # Always ensure both operands are fp16: some ops (division, accumulator
-        # shape transforms, etc.) silently produce fp32 and node_requires_fp32
-        # cannot catch every case.  Casting an already-fp16 tensor is a no-op
-        # that Triton optimises away.
-        if '.to(tl.float16)' not in left:
-            left = f"{left}.to(tl.float16)"
-        if '.to(tl.float16)' not in right:
-            right = f"{right}.to(tl.float16)"
-        # tl.dot result is always fp32, so keep_fp32=True
-        keep_fp32 = True
-        return left, right, keep_fp32
+    ) -> tuple[str, str]:
+        # tl.dot requires both operands to be fp16 for tensor core utilisation.
+        # Check the OUTERMOST type via endswith — ``in`` matches inner
+        # sub-expressions (e.g. tl.exp(tl.dot(...).to(fp32))) and misses the
+        # fact that the outermost expression is still fp32. If already fp16,
+        # the extra cast is a Triton no-op.
+        if not left.endswith('.to(tl.float16)'):
+            left = f"({left}).to(tl.float16)"
+        if not right.endswith('.to(tl.float16)'):
+            right = f"({right}).to(tl.float16)"
+        return left, right

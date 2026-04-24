@@ -49,9 +49,8 @@ class ScalarOps:
             temp_var = f"temp_{self.state.temp_counter}"
             self.state.temp_counter += 1
             node.temp_var = temp_var
-            keep_fp32 = self.state.current_store_requires_fp32() or self.state.node_requires_fp32(child)
             expr = f"({operand} * {operand})"
-            return f"{child_code}{indent_str}{temp_var} = {self.state.cast_expression(expr, keep_fp32=keep_fp32)}"
+            return f"{child_code}{indent_str}{temp_var} = {expr}"
 
         # For other binary operations
         left_child = node.children[0]
@@ -88,13 +87,8 @@ class ScalarOps:
         self.state.temp_counter += 1
         node.temp_var = temp_var
 
-        keep_fp32 = (
-            self.state.current_store_requires_fp32()
-            or self.state.node_requires_fp32(left_child)
-            or self.state.node_requires_fp32(right_child)
-        )
         expr = f"({left} {op} {right})"
-        return f"{child_code}{indent_str}{temp_var} = {self.state.cast_expression(expr, keep_fp32=keep_fp32)}"
+        return f"{child_code}{indent_str}{temp_var} = {expr}"
 
     def generate_binary_func(self, node: ASTNode, func: str) -> str:
         """Generate binary function call (e.g., tl.maximum, tl.minimum)."""
@@ -132,13 +126,8 @@ class ScalarOps:
         self.state.temp_counter += 1
         node.temp_var = temp_var
 
-        keep_fp32 = (
-            self.state.current_store_requires_fp32()
-            or self.state.node_requires_fp32(left_child)
-            or self.state.node_requires_fp32(right_child)
-        )
         expr = f"{func}({left}, {right})"
-        return f"{child_code}{indent_str}{temp_var} = {self.state.cast_expression(expr, keep_fp32=keep_fp32)}"
+        return f"{child_code}{indent_str}{temp_var} = {expr}"
 
     def generate_unary_op(self, node: ASTNode, op: str) -> str:
         """Generate unary operation"""
@@ -154,17 +143,13 @@ class ScalarOps:
         self.state.temp_counter += 1
         node.temp_var = temp_var
 
-        keep_fp32 = (
-            self.state.current_store_requires_fp32()
-            or self.state.node_requires_fp32(child)
-            or op in ["tl.exp", "tl.sqrt", "tl.sigmoid", "tl.math.erf"]
-        )
-
         if op in ["tl.exp", "tl.sqrt", "tl.sigmoid", "tl.math.erf"]:
+            # Triton math ops require fp32 input; the explicit cast stays
+            # defensively even though the register is already fp32.
             expr = f"{op}({operand}.to(tl.float32))"
         else:
             expr = f"{op}({operand})"
-        return f"{child_code}{indent_str}{temp_var} = {self.state.cast_expression(expr, keep_fp32=keep_fp32)}"
+        return f"{child_code}{indent_str}{temp_var} = {expr}"
 
     def map_cast_dtype(self, dtype: str) -> str:
         """Map IR dtype string to a Triton dtype expression."""
@@ -213,9 +198,8 @@ class ScalarOps:
         temp_var = f"temp_{self.state.temp_counter}"
         self.state.temp_counter += 1
         node.temp_var = temp_var
-        keep_fp32 = self.state.current_store_requires_fp32() or self.state.node_requires_fp32(child)
-        sum_dtype = "tl.float32" if keep_fp32 else "tl.float16"
-        return f"{child_code}{indent_str}{temp_var} = tl.sum({tensor}, axis={axis}, dtype={sum_dtype})"
+        # Reduction accumulator always fp32 under the inductor-style rule.
+        return f"{child_code}{indent_str}{temp_var} = tl.sum({tensor}, axis={axis}, dtype=tl.float32)"
 
     def generate_reduce_max(self, node: ASTNode) -> str:
         """Generate reduce max operation"""

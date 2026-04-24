@@ -82,39 +82,20 @@ class MatmulOps:
                 # For the pattern (concat X X 1) @ (concat T1 T2 0)
                 # Result = X @ T1 + X @ T2
                 if len(left_tensors) == 2 and len(right_tensors) == 2:
-                    force_fp32 = self.state.current_store_requires_fp32() or any(
-                        self.state.node_requires_fp32(child)
-                        for child in [*left_children, *right_children]
+                    left0, right0 = self.state.promote_dot_operands(
+                        left_tensors[0], right_tensors[0],
+                        left_children[0], right_children[0],
                     )
-                    left0, right0, keep_fp32_0 = self.state.promote_dot_operands(
-                        left_tensors[0],
-                        right_tensors[0],
-                        left_children[0],
-                        right_children[0],
-                        force_fp32=force_fp32,
-                    )
-                    left1, right1, keep_fp32_1 = self.state.promote_dot_operands(
-                        left_tensors[1],
-                        right_tensors[1],
-                        left_children[1],
-                        right_children[1],
-                        force_fp32=force_fp32,
-                    )
-                    matmul1 = self.state.cast_expression(
-                        f"tl.dot({left0}, {right0})",
-                        keep_fp32=keep_fp32_0,
-                    )
-                    matmul2 = self.state.cast_expression(
-                        f"tl.dot({left1}, {right1})",
-                        keep_fp32=keep_fp32_1,
+                    left1, right1 = self.state.promote_dot_operands(
+                        left_tensors[1], right_tensors[1],
+                        left_children[1], right_children[1],
                     )
                     indent_str = '    ' * self.state.indent_level
                     temp_var = f"temp_{self.state.temp_counter}"
                     self.state.temp_counter += 1
                     node.temp_var = temp_var
-                    keep_fp32 = force_fp32 or keep_fp32_0 or keep_fp32_1
-                    expr = f"({matmul1} + {matmul2})"
-                    return f"{child_code}{indent_str}{temp_var} = {self.state.cast_expression(expr, keep_fp32=keep_fp32)}"
+                    expr = f"(tl.dot({left0}, {right0}) + tl.dot({left1}, {right1}))"
+                    return f"{child_code}{indent_str}{temp_var} = {expr}"
                 else:
                     # Fallback for other concat patterns
                     raise NotImplementedError(f"Concat pattern with {len(left_tensors)} x {len(right_tensors)} tensors not supported")
@@ -125,18 +106,14 @@ class MatmulOps:
         left_code, left = self.gen.scalar_ops.ensure_temp_var(left_child, "matmul")
         right_code, right = self.gen.scalar_ops.ensure_temp_var(right_child, "matmul")
         child_code = f"{left_code}{right_code}"
-        left, right, keep_fp32 = self.state.promote_dot_operands(
-            left,
-            right,
-            left_child,
-            right_child,
+        left, right = self.state.promote_dot_operands(
+            left, right, left_child, right_child,
         )
         indent_str = '    ' * self.state.indent_level
         temp_var = f"temp_{self.state.temp_counter}"
         self.state.temp_counter += 1
         node.temp_var = temp_var
-        expr = f"tl.dot({left}, {right})"
-        return f"{child_code}{indent_str}{temp_var} = {self.state.cast_expression(expr, keep_fp32=keep_fp32)}"
+        return f"{child_code}{indent_str}{temp_var} = tl.dot({left}, {right})"
 
     def contains_nested_matmul(self, node: ASTNode) -> bool:
         """Check if node contains nested matmul operations"""
@@ -205,18 +182,10 @@ class MatmulOps:
                         left_expr = left_child.temp_var if hasattr(left_child, 'temp_var') else self.gen.expressions.generate_node_without_loads(left_child)
                         right_expr = right_child.temp_var if hasattr(right_child, 'temp_var') else self.gen.expressions.generate_node_without_loads(right_child)
 
-                        left_expr, right_expr, keep_fp32 = self.state.promote_dot_operands(
-                            left_expr,
-                            right_expr,
-                            left_child,
-                            right_child,
-                            force_fp32=self.state.current_store_requires_fp32(),
+                        left_expr, right_expr = self.state.promote_dot_operands(
+                            left_expr, right_expr, left_child, right_child,
                         )
-                        expr = f"tl.dot({left_expr}, {right_expr})"
-                        code_line = (
-                            f"{indent_str}{temp_name} = "
-                            f"{self.state.cast_expression(expr, keep_fp32=keep_fp32)}\n"
-                        )
+                        code_line = f"{indent_str}{temp_name} = tl.dot({left_expr}, {right_expr})\n"
 
                         # Store temp_var for later use
                         inner_matmul.temp_var = temp_name

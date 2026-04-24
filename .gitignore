@@ -236,6 +236,7 @@ backend/profile/debug/
 CLAUDE.md
 PRECISION_STRATEGY.md
 test*
+format.py
 
 node_modules/
 package-lock.json

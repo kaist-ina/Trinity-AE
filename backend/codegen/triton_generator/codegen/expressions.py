@@ -81,62 +81,42 @@ class ExpressionLowerer:
             }
             left_expr = self.generate_node_without_loads(node.children[0])
             right_expr = self.generate_node_without_loads(node.children[1])
-            keep_fp32 = (
-                self.state.current_store_requires_fp32()
-                or self.state.node_requires_fp32(node.children[0])
-                or self.state.node_requires_fp32(node.children[1])
-            )
-            expr = f"({left_expr} {op_map[node.node_type]} {right_expr})"
-            return self.state.cast_expression(expr, keep_fp32=keep_fp32)
+            return f"({left_expr} {op_map[node.node_type]} {right_expr})"
         elif node.node_type == NodeType.MAX:
             left_expr = self.generate_node_without_loads(node.children[0])
             right_expr = self.generate_node_without_loads(node.children[1])
-            keep_fp32 = (
-                self.state.current_store_requires_fp32()
-                or self.state.node_requires_fp32(node.children[0])
-                or self.state.node_requires_fp32(node.children[1])
-            )
-            expr = f"tl.maximum({left_expr}, {right_expr})"
-            return self.state.cast_expression(expr, keep_fp32=keep_fp32)
+            return f"tl.maximum({left_expr}, {right_expr})"
         elif node.node_type == NodeType.MIN:
             left_expr = self.generate_node_without_loads(node.children[0])
             right_expr = self.generate_node_without_loads(node.children[1])
-            keep_fp32 = (
-                self.state.current_store_requires_fp32()
-                or self.state.node_requires_fp32(node.children[0])
-                or self.state.node_requires_fp32(node.children[1])
-            )
-            expr = f"tl.minimum({left_expr}, {right_expr})"
-            return self.state.cast_expression(expr, keep_fp32=keep_fp32)
+            return f"tl.minimum({left_expr}, {right_expr})"
         elif node.node_type == NodeType.MATMUL:
             # Handle matmul specially - check if it has a temp_var from nested processing
             if hasattr(node, 'temp_var'):
                 return node.temp_var
             else:
-                # Generate matmul expression
                 left = node.children[0]
                 right = node.children[1]
                 left_expr = self.generate_node_without_loads(left)
                 right_expr = self.generate_node_without_loads(right)
-                left_expr, right_expr, keep_fp32 = self.state.promote_dot_operands(
-                    left_expr,
-                    right_expr,
-                    left,
-                    right,
+                # promote_dot_operands downcasts both operands to fp16 so the
+                # tensor-core HMMA path can be used; tl.dot returns fp32.
+                left_expr, right_expr = self.state.promote_dot_operands(
+                    left_expr, right_expr, left, right,
                 )
-                expr = f"tl.dot({left_expr}, {right_expr})"
-                return self.state.cast_expression(expr, keep_fp32=keep_fp32)
+                return f"tl.dot({left_expr}, {right_expr})"
         elif node.node_type == NodeType.RSUM:
-            # Handle reduce sum specially
+            # Handle reduce sum specially. Under the inductor-style precision
+            # rule the reduction accumulator is always fp32 (same as the
+            # register compute dtype); the fp16 cast for global storage is
+            # applied later at the store site.
             child = node.children[0]
             axis = self.gen.dispatch.generate_node(node.children[1])
-            keep_fp32 = self.state.current_store_requires_fp32() or self.state.node_requires_fp32(child)
-            sum_dtype = "tl.float32" if keep_fp32 else "tl.float16"
             if child.node_type == NodeType.LOAD and hasattr(child, 'temp_var'):
-                return f"tl.sum({child.temp_var}, axis={axis}, dtype={sum_dtype})"
+                return f"tl.sum({child.temp_var}, axis={axis}, dtype=tl.float32)"
             else:
                 child_expr = self.generate_node_without_loads(child)
-                return f"tl.sum({child_expr}, axis={axis}, dtype={sum_dtype})"
+                return f"tl.sum({child_expr}, axis={axis}, dtype=tl.float32)"
         elif node.node_type == NodeType.RMAX:
             child = node.children[0]
             axis = self.gen.dispatch.generate_node(node.children[1])
@@ -171,9 +151,7 @@ class ExpressionLowerer:
             return f"tl.exp({operand}.to(tl.float32))"
         elif node.node_type == NodeType.SQR:
             operand = self.generate_node_without_loads(node.children[0])
-            keep_fp32 = self.state.current_store_requires_fp32() or self.state.node_requires_fp32(node.children[0])
-            expr = f"({operand} * {operand})"
-            return self.state.cast_expression(expr, keep_fp32=keep_fp32)
+            return f"({operand} * {operand})"
         elif node.node_type == NodeType.SQRT:
             operand = self.generate_node_without_loads(node.children[0])
             return f"tl.sqrt({operand}.to(tl.float32))"
@@ -192,8 +170,6 @@ class ExpressionLowerer:
             return f"{value_expr}.to({dtype})"
         elif node.node_type == NodeType.ABS:
             operand = self.generate_node_without_loads(node.children[0])
-            keep_fp32 = self.state.current_store_requires_fp32() or self.state.node_requires_fp32(node.children[0])
-            expr = f"tl.abs({operand})"
-            return self.state.cast_expression(expr, keep_fp32=keep_fp32)
+            return f"tl.abs({operand})"
         else:
             return self.gen.dispatch.generate_node(node)
