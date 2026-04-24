@@ -8,7 +8,7 @@ def main():
     parser.add_argument("--t", type=str, default="vanilla", help="Benchmark type")
     parser.add_argument("--n", type=int, default=0, help="Case number for IR")
     parser.add_argument("--d", type=int, default=0, help="Type device number")
-    parser.add_argument("--baseline", nargs="*", default=["trinity"], help="List of baselines")
+    parser.add_argument("--baseline", nargs="*", default=[], help="List of baselines")
     parser.add_argument("--print_output", action="store_true")
     args = parser.parse_args()
 
