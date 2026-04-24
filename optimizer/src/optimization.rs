@@ -12,28 +12,16 @@ pub fn run_until_saturated(
 ) -> Runner<TileLang, LoopAnalysis> {
     let parsed_expr: RecExpr<TileLang> = expr.parse().unwrap();
 
-    // 기본 BackoffScheduler
+    // BackoffScheduler
     let default_scheduler = BackoffScheduler::default()
-        .rule_match_limit("seq-comm-tail", usize::MAX)
+        .rule_match_limit("seq-comm-tail", 5000)
+        .rule_ban_length("seq-comm-tail", 1)
         .rule_match_limit("seq-comm", usize::MAX)
+        .rule_ban_length("seq-comm", 0)
+        .rule_match_limit("loop-fusion-unified-tail", 5000)
+        .rule_ban_length("loop-fusion-unified-tail", 1)
         .rule_match_limit("loop-fusion-unified", usize::MAX)
-        .rule_match_limit("loop-fusion-unified-tail", usize::MAX);
-
-    // let default_scheduler = BackoffScheduler::default()
-    //     .rule_match_limit("seq-comm-tail", 5000)
-    //     .rule_ban_length("seq-comm-tail", 1)
-    //     .rule_match_limit("seq-comm", usize::MAX)
-    //     .rule_ban_length("seq-comm", 0)
-    //     .rule_match_limit("seq-comm-loop-store-tail1", usize::MAX)
-    //     .rule_ban_length("seq-comm-loop-store-tail1", 0)
-    //     .rule_match_limit("seq-comm-loop-store-tail2", usize::MAX)
-    //     .rule_ban_length("seq-comm-loop-store-tail2", 0)
-    //     .rule_match_limit("seq-comm-loop-loop-tail", usize::MAX)
-    //     .rule_ban_length("seq-comm-loop-loop-tail", 0)
-    //     .rule_match_limit("loop-fusion-unified-tail", 5000)
-    //     .rule_ban_length("loop-fusion-unified-tail", 1)
-    //     .rule_match_limit("loop-fusion-unified", usize::MAX)
-    //     .rule_ban_length("loop-fusion-unified", 0);
+        .rule_ban_length("loop-fusion-unified", 0);
 
     let runner = Runner::default()
         .with_expr(&parsed_expr)
