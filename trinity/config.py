@@ -33,7 +33,7 @@ class OptimizeConfig:
     optimizer_timeout_s: int = 3600
     backend_timeout_s: Optional[int] = None
     backend_optimized_benchmark: bool = True
-    backend_max_benchmarks: int = 64
+    backend_max_benchmarks: int = 512
     backend_seed_samples: int = 16
     backend_local_refine_budget: int = 16
     backend_local_refine_top_k: int = 1
