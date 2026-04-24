@@ -190,9 +190,10 @@ class KeyFormer(nn.Module):
         perturb_exp = torch.exp(perturb)
         perturb_sum = torch.sum(perturb_exp, dim=-1, keepdim=True)
         perturb_out = perturb_exp / perturb_sum
+        perturb_out = perturb_out.sum(dim=1)
 
         # perturb_out = F.softmax(perturb, dim=-1)
-        
+
         output = torch.matmul(weights, v_cache)
         output = output.permute(1, 0, 2)
         output = output.contiguous().view(self.M, self.H * self.D)
@@ -801,6 +802,7 @@ class TensorRT_KeyFormer(nn.Module):
                 perturb_exp = torch.exp(perturb)
                 perturb_sum = torch.sum(perturb_exp, dim=-1, keepdim=True)
                 perturb_out = perturb_exp / perturb_sum
+                perturb_out = perturb_out.sum(dim=1)
 
                 # weights = F.softmax(scores, dim=-1)
                 # perturb_out = F.softmax(perturb, dim=-1)
@@ -1528,11 +1530,11 @@ class FlashInfer_KeyFormer(nn.Module):
         scores = torch.matmul(q.transpose(0, 1), k_cache.transpose(1, 2))
         perturb = (scores + self.noise) / 1.5
         weights = F.softmax(scores, dim=-1)
-        perturb_out = F.softmax(perturb, dim=-1)
+        perturb_out = F.softmax(perturb, dim=-1).sum(dim=1)
 
         output = output.permute(1, 0, 2)
         output = output.contiguous().view(self.M, self.H * self.D)
-        return output
+        return output, perturb_out
 
 class FlashInfer_QKNorm(nn.Module):
     def __init__(self, M, N, D, P, cache_K, cache_V, W_q=None, W_k=None, W_v=None, device=None, dtype=None):
@@ -1636,4 +1638,4 @@ class FlashInfer_RoCo(nn.Module):
 
         output = output.permute(1, 0, 2)
         output = output.contiguous().view(self.M, self.H * self.D)
-        return output
+        return output, weights_sum, weights_sqr_sum
