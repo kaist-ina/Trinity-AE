@@ -82,4 +82,4 @@ if __name__ == "__main__":
     V_cache = torch.randn((H, P+M, D))
 
     model = QKNormAttn(M, H, D, P, K_cache, V_cache)
-    result = trinity.optimize(model, X, basename="qknorm", verbose=True, skip_frontend=True, backend_max_benchmarks=99999, backend_timeout_s=None)
+    result = trinity.optimize(model, X, basename="qknorm", verbose=True, skip_frontend=False, backend_max_benchmarks=512)
