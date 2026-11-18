@@ -12,7 +12,9 @@ Trinity-AE/
 ├── optimizer/      # Tile-level equality saturation (Rust)
 ├── backend/        # IR → Triton kernel generation & profiling
 ├── trinity/        # End-to-end pipeline automation
-└── scripts/        # Model definitions & run example pipeline
+├── scripts/        # Model definitions & run example pipeline
+├── standard_ir/    # Pre-generated Trinity IR (ir.txt, shapes.json) per benchmark
+└── third_party/    # Vendored TVM wheels (third_party/wheels/)
 ```
 
 For detailed documentation, see the README in each directory:
@@ -25,3 +27,20 @@ For detailed documentation, see the README in each directory:
 
 The frontend now expects a vendored CPU TVM wheel under `third_party/wheels/`.
 Run `./scripts/setup.sh` after placing the wheel there.
+
+
+## Known Issues and Limitations
+
+The current artifact has the following known issues and limitations. We are working to address these issues and will update this repository with fixes soon. Please review the notes below before running experiments.
+
+### 1. Attention support is limited to decoding without masking
+
+The current implementation does not support attention masking, including the causal masking required for autoregressive prefill. Attention support in this artifact is therefore limited to decoding configurations that do not require masking. Prefill and other configurations that require an attention mask are currently unsupported.
+
+### 2. Limited support for GEMV and small matrix dimensions
+
+Our current Triton backend relies on `tl.dot()` for matrix multiplication and requires tile dimensions of at least 16 along the matrix multiplication axes. Consequently, workloads that do not map well to this execution path, such as unbatched matrix–vector multiplication (GEMV), are not well supported. This is a limitation of the current Trinity backend.
+
+### 3. Frontend correctness issues
+
+The frontend currently has known correctness issues and may not generate correct Trinity IR for all models. We recommend setting `skip_frontend=True` and providing Trinity IR directly rather than relying on automatic frontend conversion.

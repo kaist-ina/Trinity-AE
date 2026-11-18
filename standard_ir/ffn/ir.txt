@@ -1,0 +1,123 @@
+(seq
+    (loop 0 4096 tile_n n
+        (loop 0 4096 tile_k k
+            (store (tensor attn_O1)
+                (+
+                    (load (tensor attn_O1) (index (fulltile) (tile n)))
+                    (@
+                        (load (input O2) (index (fulltile) (tile k)))
+                        (load (input WO) (index (tile k) (tile n)))
+                    )
+                )
+                (index (fulltile) (tile n))
+            )
+        )
+    )
+(seq
+    (loop 0 4096 tile_n n
+        (store (tensor attn_O2)
+            (+
+                (load (tensor attn_O1) (index (fulltile) (tile n)))
+                (load (input X) (index (fulltile) (tile n)))
+            )
+            (index (fulltile) (tile n))
+        )
+    )
+(seq
+    (loop 0 4096 tile_k k
+        (store (tensor attn_O3)
+            (+
+                (load (tensor attn_O3) (index (fulltile)))
+                (rsum
+                    (sqr (load (tensor attn_O2) (index (fulltile) (tile k))))
+                    1
+                )
+            )
+            (index (fulltile))
+        )
+    )
+(seq
+    (loop 0 4096 tile_k k
+        (store (tensor attn_O_norm)
+            (/
+                (load (tensor attn_O2) (index (fulltile) (tile k)))
+                (bcast
+                    (sqrt
+                        (/
+                            (load (tensor attn_O3) (index (fulltile)))
+                            4096
+                        )
+                    )
+                    1
+                )
+            )
+            (index (fulltile) (tile k))
+        )
+    )
+(seq
+    (loop 0 16384 tile_p p
+        (loop 0 4096 tile_k k
+            (store (tensor FF1a)
+                (+
+                    (load (tensor FF1a) (index (fulltile) (tile p)))
+                    (@
+                        (load (tensor attn_O_norm) (index (fulltile) (tile k)))
+                        (load (input WFF1a) (index (tile k) (tile p)))
+                    )
+                )
+                (index (fulltile) (tile p))
+            )
+        )
+    )
+(seq
+    (loop 0 16384 tile_p p
+        (loop 0 4096 tile_k k
+            (store (tensor FF1b)
+                (+
+                    (load (tensor FF1b) (index (fulltile) (tile p)))
+                    (@
+                        (load (tensor attn_O_norm) (index (fulltile) (tile k)))
+                        (load (input WFF1b) (index (tile k) (tile p)))
+                    )
+                )
+                (index (fulltile) (tile p))
+            )
+        )
+    )
+(seq
+    (loop 0 16384 tile_p p
+        (store (tensor FF1b_silu)
+            (*
+                (load (tensor FF1b) (index (fulltile) (tile p)))
+                (sigmoid
+                    (load (tensor FF1b) (index (fulltile) (tile p)))
+                )
+            )
+            (index (fulltile) (tile p))
+        )
+    )
+(seq
+    (loop 0 16384 tile_p p
+        (store (tensor FF1)
+            (*
+                (load (tensor FF1a) (index (fulltile) (tile p)))
+                (load (tensor FF1b_silu) (index (fulltile) (tile p)))
+            )
+            (index (fulltile) (tile p))
+        )
+    )
+    (loop 0 4096 tile_n n
+        (loop 0 16384 tile_p p
+            (store (output FF2)
+                (+
+                    (load (output FF2) (index (fulltile) (tile n)))
+                    (@
+                        (load (tensor FF1) (index (fulltile) (tile p)))
+                        (load (input WFF2) (index (tile p) (tile n)))
+                    )
+                )
+                (index (fulltile) (tile n))
+            )
+        )
+    )
+))))))))

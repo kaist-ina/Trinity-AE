@@ -66,10 +66,11 @@ kernel = result.kernel             # Compiled Triton kernel
 # Run from project root
 python scripts/vanilla.py
 python scripts/prenorm.py
-python scripts/ffn.py
+python scripts/qknorm.py
+python scripts/roco.py
 ```
 
-> **Note:** The frontend is currently under development and does not yet produce correct IR for all models. To work around this, pre-generated IR and shapes (`ir.txt`, `shapes.json`) from `optimizer/tests/` are placed in `trinity_output/{basename}/frontend/`. All scripts run with `skip_frontend=True` to use these pre-generated files instead of the frontend stage.
+> **Note:** The frontend is currently under development and does not yet produce correct IR for all models. To work around this, pre-generated IR and shapes (`ir.txt`, `shapes.json`) are provided under `standard_ir/{basename}/` (e.g., `standard_ir/vanilla/`, `standard_ir/prenorm/`, `standard_ir/qknorm/`, `standard_ir/roco/`, `standard_ir/keyformer/`, `standard_ir/ffn/`). The example scripts call `trinity.optimize()` with `skip_frontend=False`; pass `skip_frontend=True` instead to load the pre-generated files from `standard_ir/{basename}/` rather than running the frontend stage.
 
 ### Config Options
 
@@ -81,7 +82,7 @@ All options are passed as keyword arguments to `trinity.optimize()`:
 | `cost` | `6` | Cost threshold for equality saturation |
 | `kern` | `1` | Kernel partition parameter |
 | `device` | `0` | CUDA device ID |
-| `skip_frontend` | `False` | Skip IR generation (reuse existing) |
+| `skip_frontend` | `False` | Skip IR generation and load `ir.txt`/`shapes.json` from `standard_ir/{basename}/` |
 | `skip_optimizer` | `False` | Skip equality saturation (reuse existing) |
 | `skip_backend` | `False` | Skip kernel profiling (reuse existing) |
 | `verbose` | `True` | Enable logging |
@@ -101,12 +102,12 @@ Each stage can be skipped via `skip_frontend`, `skip_optimizer`, `skip_backend` 
 
 ### Output Structure
 
-Results are saved under `trinity_output/{basename}/`:
+Results are saved under `trinity_output/{basename}/` (or `trinity_output/{basename}_skip_fe/` when `skip_frontend=True`):
 
 ```
 {basename}/
 ├── config.json       # Pipeline configuration
-├── frontend/         # IR and tensor shapes
+├── frontend/         # IR and tensor shapes (copied from `standard_ir/{basename}/` when `skip_frontend=True`)
 ├── optimizer/        # Optimized IR expressions
 ├── backend/          # Benchmark results
 ├── kernels/          # Best Triton kernel

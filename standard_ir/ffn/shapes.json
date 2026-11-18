@@ -1,0 +1,106 @@
+{
+  "O2": {
+    "shape": [
+      16,
+      4096
+    ],
+    "type": "input"
+  },
+  "WO": {
+    "shape": [
+      4096,
+      4096
+    ],
+    "type": "input"
+  },
+  "attn_O1": {
+    "shape": [
+      16,
+      4096
+    ],
+    "type": "intermediate"
+  },
+  "X": {
+    "shape": [
+      16,
+      4096
+    ],
+    "type": "input"
+  },
+  "attn_O2": {
+    "shape": [
+      16,
+      4096
+    ],
+    "type": "intermediate"
+  },
+  "attn_O3": {
+    "shape": [
+      16
+    ],
+    "type": "intermediate"
+  },
+  "attn_O_norm": {
+    "shape": [
+      16,
+      4096
+    ],
+    "type": "intermediate"
+  },
+  "WFF1a": {
+    "shape": [
+      4096,
+      16384
+    ],
+    "type": "input"
+  },
+  "WFF1b": {
+    "shape": [
+      4096,
+      16384
+    ],
+    "type": "input"
+  },
+  "FF1a": {
+    "shape": [
+      16,
+      16384
+    ],
+    "type": "intermediate"
+  },
+  "FF1b": {
+    "shape": [
+      16,
+      16384
+    ],
+    "type": "intermediate"
+  },
+  "FF1b_silu": {
+    "shape": [
+      16,
+      16384
+    ],
+    "type": "intermediate"
+  },
+  "FF1": {
+    "shape": [
+      16,
+      16384
+    ],
+    "type": "intermediate"
+  },
+  "FF2": {
+    "shape": [
+      16,
+      4096
+    ],
+    "type": "output"
+  },
+  "WFF2": {
+    "shape": [
+      16384,
+      4096
+    ],
+    "type": "input"
+  }
+}
